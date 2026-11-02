@@ -33,7 +33,10 @@
       ['Line of business', M.client.lob || ''],
       ['Taxable period', 'Q' + M.quarter + ' ' + M.year + ' (' + QTR[M.quarter] + ')'],
       ['Tax method', M.methodLabel],
-      ['Expenses source', M.R.expenseSource === 'auto' ? 'Auto-generated at ' + M.R.auto.percent + '% of revenue' : 'Uploaded documents'],
+      ['CWT (BIR 2307) basis', M.cwt.note || 'None'],
+      ['Expenses source', M.R.expenseSource === 'auto'
+        ? 'Estimated — cost of sales ' + M.R.auto.cosPct + '% + operating expenses ' + M.R.auto.opexPct + '% of revenue' + (M.R.auto.basis === 'prior' && M.R.auto.prev ? ' (rates from ' + M.R.auto.prev.label + ' ITR' + (M.R.auto.prev.cos !== M.R.auto.cosPct || M.R.auto.prev.opex !== M.R.auto.opexPct ? ', adjusted' : '') + ')' : ' (rate set by user)')
+        : 'Uploaded documents'],
       ['Prepared by', (M.user && M.user.name) || ''],
       ['Generated on', new Date().toLocaleString('en-PH')]
     ];
@@ -78,10 +81,10 @@
     if (cos.length) cos.forEach((a) => line(a.account, a.amount, 'ind')); else line('None', 0, 'ind');
     line('Total cost of sales', M.cos, 'tot');
     line('Gross profit', M.grossProfit, 'sub');
-    head('Operating expenses');
+    head('Operating expenses (Total Allowable Itemized Deductions)');
     const op = M.accounts.filter((a) => a.category === 'operating_expense');
     if (op.length) op.forEach((a) => line(a.account, a.amount, 'ind')); else line('None', 0, 'ind');
-    line('Total operating expenses', M.opex, 'tot');
+    line('Total Allowable Itemized Deductions', M.opex, 'tot');
     if (M.ent.disallowed > 0 && M.method === 'itemized') {
       line('Less: Representation & entertainment over ' + (M.ent.rate * 100) + '% limit', -M.ent.disallowed, 'muted');
       line('Allowable operating expenses', M.deductibleOpex, 'sub');
@@ -98,9 +101,10 @@
       else line(l.label, l.amount, l.type === 'total' ? 'tot' : l.type === 'subtotal' ? 'sub' : 'ind');
     });
     head('Less: Tax credits / payments');
-    T.credits.forEach((c) => line(c.label, c.amount, 'ind'));
+    T.credits.forEach((c) => line(c.label + (c.note ? ' — ' + c.note : ''), c.amount, 'ind'));
     line('Total tax credits / payments', T.totalCredits, 'tot');
-    line(T.taxPayable < 0 ? 'OVERPAYMENT' : 'TAX PAYABLE', T.taxPayable, 'grand');
+    line('TAX STILL DUE', T.taxPayable, 'grand');
+    if (T.excessCredits > 0) line('Excess credits carried over to next quarter', T.excessCredits, 'muted');
     ws.addRow([]);
     const note = ws.addRow(['Computed under the TRAIN Law and CREATE Act rates. Check all figures against the source documents before filing in eBIRForms / eFPS.']);
     ws.mergeCells(note.number, 1, note.number, 2);
@@ -141,9 +145,21 @@
     table(wb, 'Expense Details', ['Source file', 'Date', 'Vendor / payee', 'Description', 'Account', 'Category', 'Amount', 'VAT'], det, [28, 12, 26, 40, 32, 18, 16, 12], [7, 8],
       ['TOTAL', '', '', '', '', '', Math.round(M.R.items.reduce((s, i) => s + i.amount, 0) * 100) / 100, Math.round(M.R.items.reduce((s, i) => s + (i.vat_amount || 0), 0) * 100) / 100]);
 
+    if (M.R.certs && M.R.certs.length) {
+      const rows = [];
+      M.R.certs.forEach((c) => {
+        const per = [c.period_from, c.period_to].filter(Boolean).join(' – ') || ('Q' + c.quarter + ' ' + c.year);
+        (c.lines.length ? c.lines : [{ atc: '', nature: '', month1: 0, month2: 0, month3: 0, total_income: c.total_income, tax_withheld: c.total_tax_withheld }])
+          .forEach((l) => rows.push([c.payor_name, c.payor_tin, per, l.atc, l.nature, l.month1, l.month2, l.month3, l.total_income, l.tax_withheld, c.file]));
+      });
+      table(wb, 'BIR 2307', ['Payor / Withholding agent', 'Payor TIN', 'Period', 'ATC', 'Nature of payment', '1st month', '2nd month', '3rd month', 'Total income', 'Tax withheld', 'Source file'],
+        rows, [34, 18, 24, 9, 30, 14, 14, 14, 16, 14, 26], [6, 7, 8, 9, 10],
+        ['TOTAL', '', '', '', '', '', '', '', Math.round(M.R.certs.reduce((s, c) => s + c.total_income, 0) * 100) / 100, Math.round(M.R.cwtUploaded * 100) / 100, '']);
+    }
+
     const docRows = M.R.docs.map((d) => {
-      const t = { sales_vat: '2550Q', sales_nonvat: '2551Q', prior_itr: 'Previous ' + M.form, expenses: 'Expenses' }[d.type];
-      const amt = d.type === 'expenses' ? d.data.document_total : d.type === 'prior_itr' ? d.data.tax_due : d.data.revenue;
+      const t = { sales_vat: '2550Q', sales_nonvat: '2551Q', prior_itr: 'Previous ' + M.form, expenses: 'Expenses', form_2307: 'BIR 2307' }[d.type];
+      const amt = d.type === 'form_2307' ? d.data.total_tax_withheld : d.type === 'expenses' ? d.data.document_total : d.type === 'prior_itr' ? d.data.tax_due : d.data.revenue;
       const per = d.data.quarter ? 'Q' + d.data.quarter + ' ' + (d.data.year || '') : (d.data.period_text || '');
       return [t, d.file, per, amt, d.data.confidence || '', d.data.notes || '', d.url || ''];
     });

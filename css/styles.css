@@ -432,3 +432,44 @@ input[type=range] { width: 100%; accent-color: var(--navy); height: 28px; }
 .field-hint { font-size: 12.5px; color: var(--muted); min-height: 16px; }
 .field-hint.ok { color: var(--ok); }
 .client-card b.forms { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink-2); }
+
+/* ---------- CWT (2307) ---------- */
+.upl-cwt { grid-column: 1 / -1; background: linear-gradient(135deg, #f3f8ff, #fbfdff); border-color: #cfe0f7; }
+.seg-4 { grid-template-columns: repeat(4, 1fr); }
+.seg-4 button, #vatSeg button, #cwtKind button { height: auto; min-height: 52px; padding: 7px 6px; }
+.cwt-pane { margin-top: 12px; }
+.cwt-amt { max-width: 320px; margin: 0; }
+.peso-in { position: relative; }
+.peso-in i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-style: normal; font-weight: 700; color: var(--muted); }
+.peso-in input { padding-left: 30px !important; font-family: var(--mono); }
+@media (max-width: 640px) { .seg-4 { grid-template-columns: 1fr 1fr; } }
+.cwt-switch { width: 100%; height: 36px; border: 1.5px solid #d5dde8; border-radius: 8px; padding: 0 8px; font-size: 13px; background: #fff; }
+
+/* ---------- Expense % (split from previous quarter) ---------- */
+.split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pct-field { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1.5px solid #d5dde8; border-radius: 14px; background: #fbfcfe; }
+.pct-field > span { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
+.pct-in { display: flex; align-items: baseline; gap: 4px; }
+.pct-in input { width: 100%; min-width: 0; border: 0; background: transparent; font-size: 34px; font-weight: 800; color: var(--brand-ink); outline: none; letter-spacing: -.02em; padding: 0; }
+.pct-in i { font-style: normal; font-size: 22px; font-weight: 800; color: var(--muted); }
+.pct-field:focus-within { border-color: #1565c0; box-shadow: 0 0 0 3px rgba(21,101,192,.15); }
+.pct-field small { font-size: 12px; color: var(--muted); min-height: 15px; }
+.pct-field small.changed { color: #b45309; font-weight: 700; }
+.pct-field b { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.split-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--brand-ink); color: #fff; }
+.split-total span { font-weight: 700; font-size: 14px; }
+.split-total b { font-family: var(--mono); font-size: 14px; color: var(--gold-2); }
+@media (max-width: 420px) { .pct-in input { font-size: 28px; } }
+
+.est-box { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-end; padding: 14px 16px; margin-bottom: 16px; border-radius: 14px; border: 1px solid #f6e2a8; background: linear-gradient(135deg, #fffaf0, #fffdf7); }
+.est-box .est-h { flex: 1 1 100%; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.est-box .est-h b { font-size: 14.5px; }
+.est-box .est-h small { color: var(--muted); font-size: 12.5px; }
+.est-in { display: flex; flex-direction: column; gap: 4px; }
+.est-in span { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
+.est-in .pct-box { display: flex; align-items: center; gap: 4px; }
+.est-in input { width: 92px; height: 38px; border: 1.5px solid #d5dde8; border-radius: 9px; padding: 0 8px; text-align: right; font-family: var(--mono); font-weight: 700; font-size: 14px; }
+.est-in input.changed { border-color: var(--gold); background: #fffbeb; }
+.est-in small { font-size: 11.5px; color: var(--muted); }
+.est-box .btn { padding: 8px 12px; font-size: 13px; }
+.sub-lbl { display: block; font-style: normal; font-size: 10.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); margin-top: 2px; }

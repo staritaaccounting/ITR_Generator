@@ -4,7 +4,8 @@
  * taxable income to date, then prior-quarter payments and credits are deducted.
  *
  * 1701Q (individuals)  : graduated rates (itemized or 40% OSD) or 8% income tax option
- * 1702Q (corporations) : RCIT (25% / 20% / custom) vs MCIT (2% of gross income), whichever is higher
+ * 1702Q (corporations) : RCIT 25% / 20% vs MCIT (whichever is higher), MCIT only, IAET 10%, Non-resident 25%
+ * Credits/labels follow the Sta. Rita Tax Calc: Tax Still Due = max(0, Tax Due − credits)
  */
 (function (root) {
   'use strict';
@@ -49,11 +50,12 @@
     const p = i.prior || {};
     const items = [
       { key: 'priorYearExcess', label: "Prior Year's Excess Credits", amount: r2(p.priorYearExcess) },
-      { key: 'taxPaymentsPrev', label: 'Tax Payment/s for the Previous Quarter/s', amount: r2(p.taxPaymentsPrev) },
-      { key: 'cwtPrev', label: 'Creditable Tax Withheld for the Previous Quarter/s', amount: r2(p.cwtPrev) },
-      { key: 'cwtThisQ', label: 'Creditable Tax Withheld per BIR Form 2307 for this Quarter', amount: r2(i.cwtThisQ) },
-      { key: 'otherCredits', label: 'Other Tax Credits/Payments', amount: r2(i.otherCredits) }
+      { key: 'taxPaymentsPrev', label: 'Tax Paid in Prior Quarters', amount: r2(p.taxPaymentsPrev) },
+      { key: 'cwtPrev', label: 'Creditable Withholding Tax — Previous Quarter/s', amount: r2(p.cwtPrev) },
+      { key: 'cwtThisQ', label: 'Creditable Withholding Tax — This Quarter (BIR 2307)', amount: r2(i.cwtThisQ), note: i.cwtNote || '' }
     ];
+    if (i.form === '1702Q') items.push({ key: 'excessMcit', label: 'Excess MCIT Credit', amount: r2(i.excessMcit) });
+    items.push({ key: 'otherCredits', label: 'Other Tax Credits', amount: r2(i.otherCredits) });
     const total = r2(items.reduce((s, x) => s + x.amount, 0));
     return { items, total };
   }
@@ -76,102 +78,123 @@
       taxDue = r2(taxableToDate * 0.08);
       if (cum > 3000000) warnings.push('Cumulative gross sales/receipts now exceed ₱3,000,000. The 8% option no longer applies; switch to graduated rates.');
       lines.push(
-        { label: 'Sales/Revenues/Receipts/Fees', amount: rev },
-        { label: 'Add: Non-Operating Income', amount: nonop, editable: 'otherIncome' },
+        { label: 'Gross Income / Gross Receipts', amount: rev },
+        { label: 'Add: Other Taxable Income', amount: nonop, editable: 'otherIncome' },
         { label: 'Total Income for the Quarter', amount: totalQ, type: 'subtotal' },
-        { label: 'Add: Total Taxable Income/(Loss) Previous Quarter/s', amount: prev, editable: 'cumulativeIncomePrev' },
-        { label: 'Cumulative Taxable Income/(Loss) as of this Quarter', amount: cum, type: 'subtotal' },
-        { label: i.mixedIncome ? 'Less: Allowable reduction (not applicable — mixed income earner)' : 'Less: Allowable reduction from gross sales/receipts', amount: reduction },
-        { label: 'Taxable Income/(Loss) To Date', amount: taxableToDate, type: 'subtotal' },
-        { label: 'Tax Due (8%)', amount: taxDue, type: 'total' }
+        { label: 'Add: Cumulative Income — Previous Quarter/s', amount: prev, editable: 'cumulativeIncomePrev' },
+        { label: 'Cumulative Income as of this Quarter', amount: cum, type: 'subtotal' },
+        { label: i.mixedIncome ? 'Less: ₱250,000 reduction (not applicable — mixed income earner)' : 'Less: ₱250,000 reduction', amount: reduction },
+        { label: 'Net Taxable Income', amount: taxableToDate, type: 'subtotal' },
+        { label: 'Income Tax Due (8%)', amount: taxDue, type: 'total' }
       );
     } else {
-      const itemized = i.method !== 'osd';
-      schedule = 'Schedule I — Graduated Income Tax Rates (' + (itemized ? 'Itemized Deductions' : 'Optional Standard Deduction') + ')';
-      const cos = itemized ? r2(i.costOfSales) : 0;
+      // Deduction methods (Tax Calc logic: gross income = gross receipts − COGS; deduction = OSD or itemized)
+      //  itemized : gross income − itemized deductions
+      //  osd      : 40% of gross sales/receipts, COGS not deducted (BIR rule for individuals, RR 16-2008)
+      //  osd_gi   : 40% of gross income after COGS (as computed in the office Tax Calc)
+      const m = i.method || 'itemized';
+      const label = { itemized: 'Itemized', osd: 'OSD 40% of gross sales', osd_gi: 'OSD 40% of gross income' }[m] || 'Itemized';
+      schedule = 'Graduated Income Tax Rates — ' + label;
+      const cos = m === 'osd' ? 0 : r2(i.costOfSales);
       const gross = r2(rev - cos);
-      const ded = itemized ? r2(i.opex) : r2(rev * 0.40);
+      const ded = m === 'itemized' ? r2(i.opex) : m === 'osd' ? r2(rev * 0.40) : r2(pos(gross) * 0.40);
       const netQ = r2(gross - ded);
       const prev = r2(p.taxableIncomePrev);
-      taxableToDate = r2(netQ + nonop + prev);
+      taxableToDate = r2(pos(netQ + nonop + prev));
       taxDue = graduatedTax(taxableToDate, year);
       lines.push(
-        { label: 'Sales/Revenues/Receipts/Fees (net of returns, allowances and discounts)', amount: rev },
-        { label: 'Less: Cost of Sales/Services', amount: cos, note: itemized ? '' : 'Not deducted under OSD' },
-        { label: 'Gross Income/(Loss) from Operation', amount: gross, type: 'subtotal' },
-        itemized
-          ? { label: 'Less: Total Allowable Itemized Deductions', amount: ded }
-          : { label: 'Less: Optional Standard Deduction (40% of Sales/Receipts)', amount: ded },
-        { label: 'Net Income/(Loss) this Quarter', amount: netQ, type: 'subtotal' },
-        { label: 'Add: Taxable Income/(Loss) Previous Quarter/s', amount: prev, editable: 'taxableIncomePrev' },
-        { label: 'Non-Operating Income', amount: nonop, editable: 'otherIncome' },
-        { label: 'Total Taxable Income/(Loss) To Date', amount: taxableToDate, type: 'subtotal' },
-        { label: 'Tax Due (graduated rates, ' + (year >= 2023 ? '2023 onwards' : '2018–2022') + ' table)', amount: taxDue, type: 'total' }
+        { label: 'Gross Income / Gross Receipts', amount: rev },
+        { label: 'Less: Cost of Sales / Services (COGS)', amount: cos, note: m === 'osd' ? 'Not deducted when OSD is based on gross sales' : '' },
+        { label: 'Gross Income (net)', amount: gross, type: 'subtotal' },
+        m === 'itemized' ? { label: 'Less: Total Allowable Itemized Deductions (Operating Expenses)', amount: ded }
+          : { label: 'Less: OSD (40% of ' + (m === 'osd' ? 'gross sales/receipts' : 'gross income') + ')', amount: ded },
+        { label: 'Net Income this Quarter', amount: netQ, type: 'subtotal' },
+        { label: 'Add: Other Taxable Income', amount: nonop, editable: 'otherIncome' },
+        { label: 'Add: Taxable Income — Previous Quarter/s', amount: prev, editable: 'taxableIncomePrev' },
+        { label: 'Net Taxable Income (to date)', amount: taxableToDate, type: 'subtotal' },
+        { label: 'Income Tax Due (graduated, ' + (year >= 2023 ? '2023 onwards' : '2018–2022') + ' table)', amount: taxDue, type: 'total' }
       );
     }
-
-    const c = credits(i);
-    return finish('1701Q', schedule, lines, c, taxDue, taxableToDate, warnings, q);
+    return finish('1701Q', schedule, lines, credits(i), taxDue, taxableToDate, warnings, q);
   }
+
+  const TAX_TYPES = {
+    rcit25: { label: 'RCIT 25%', rate: 0.25, mcit: true },
+    rcit20: { label: 'RCIT 20%', rate: 0.20, mcit: true },
+    mcit: { label: 'MCIT only', rate: 0, mcit: true, only: true },
+    iaet10: { label: 'IAET 10%', rate: 0.10, mcit: false },
+    nonres25: { label: 'RCIT — Non-Resident 25%', rate: 0.25, mcit: false }
+  };
 
   function compute1702Q(i) {
     const lines = [], warnings = [];
     const q = Number(i.quarter);
-    const rate = Number(i.rcitRate) || 0.25;
+    const tt = TAX_TYPES[i.taxType] || TAX_TYPES.rcit25;
     const mcitRate = Number(i.mcitRate) || 0.02;
     const p = i.prior || {};
     const itemized = i.method !== 'osd';
 
     const rev = r2(i.revenue);
     const cos = r2(i.costOfSales);
-    const grossOps = r2(rev - cos);
+    const grossProfit = r2(rev - cos);
     const other = r2(i.otherIncome);
-    const totalGross = r2(grossOps + other);
-    const ded = itemized ? r2(i.opex) : r2(pos(totalGross) * 0.40);
-    const taxableQ = r2(totalGross - ded);
+    const totalGross = r2(grossProfit + other);
+    const opex = itemized ? r2(i.opex) : r2(pos(totalGross) * 0.40);
+    const otherDed = r2(i.otherDeductions);
+    const taxableQ = r2(totalGross - opex - otherDed);
     const prev = r2(p.taxableIncomePrev);
-    const toDate = r2(taxableQ + prev);
-    const rcit = r2(pos(toDate) * rate);
+    const toDate = r2(pos(taxableQ + prev));
+    const regular = r2(toDate * tt.rate);
 
-    const mcitBase = r2(totalGross + r2(p.grossIncomePrev));
-    const mcit = i.mcitApplies ? r2(pos(mcitBase) * mcitRate) : 0;
-    const taxDue = r2(Math.max(rcit, mcit));
-    if (i.mcitApplies && mcit > rcit) warnings.push('MCIT is higher than the regular income tax, so MCIT is the tax due this quarter.');
-    if (rate === 0.20) warnings.push('The 20% rate applies only if net taxable income is ₱5,000,000 or less AND total assets (excluding land) are ₱100,000,000 or less.');
+    // MCIT base: gross income (NIRC Sec. 27(E)) by default, or gross sales as in the office Tax Calc
+    const useSales = i.mcitBase === 'sales';
+    const baseThisQ = useSales ? rev : totalGross;
+    const mcitBase = r2(baseThisQ + r2(p.grossIncomePrev));
+    const mcitOn = tt.mcit && (tt.only || !i.mcitExempt);
+    const mcit = mcitOn ? r2(pos(mcitBase) * mcitRate) : 0;
+    let taxDue, taxLabel;
+    if (tt.only) { taxDue = mcit; taxLabel = 'MCIT ' + (mcitRate * 100) + '%'; }
+    else if (mcitOn) { taxDue = Math.max(regular, mcit); taxLabel = regular >= mcit ? tt.label : 'MCIT ' + (mcitRate * 100) + '% (higher)'; }
+    else { taxDue = regular; taxLabel = tt.label; }
+    if (mcitOn && !tt.only && mcit > regular) warnings.push('MCIT is higher than the regular income tax, so MCIT is the tax due this quarter.');
+    if (i.taxType === 'rcit20') warnings.push('The 20% rate applies only if net taxable income is ₱5,000,000 or less AND total assets (excluding land) are ₱100,000,000 or less.');
 
     lines.push(
-      { label: 'Sales/Receipts/Revenues/Fees', amount: rev },
-      { label: 'Less: Cost of Sales/Services', amount: cos },
-      { label: 'Gross Income from Operation', amount: grossOps, type: 'subtotal' },
-      { label: 'Add: Other Taxable Income Not Subjected to Final Tax', amount: other, editable: 'otherIncome' },
-      { label: 'Total Gross Income', amount: totalGross, type: 'subtotal' },
-      itemized
-        ? { label: 'Less: Deductions (Itemized)', amount: ded }
-        : { label: 'Less: Optional Standard Deduction (40% of Gross Income)', amount: ded },
-      { label: 'Taxable Income this Quarter', amount: taxableQ, type: 'subtotal' },
-      { label: 'Add: Taxable Income Previous Quarter/s', amount: prev, editable: 'taxableIncomePrev' },
-      { label: 'Total Taxable Income To Date', amount: toDate, type: 'subtotal' },
-      { label: 'Applicable Income Tax Rate', amount: rate * 100, type: 'rate' },
-      { label: 'Income Tax Due other than MCIT', amount: rcit },
-      { label: 'Gross Income Previous Quarter/s (for MCIT)', amount: r2(p.grossIncomePrev), editable: 'grossIncomePrev' },
-      { label: 'Cumulative Gross Income (MCIT base)', amount: mcitBase },
-      { label: 'Minimum Corporate Income Tax (' + (mcitRate * 100) + '%)' + (i.mcitApplies ? '' : ' — not yet applicable'), amount: mcit },
-      { label: 'Tax Due (higher of RCIT and MCIT)', amount: taxDue, type: 'total' }
+      { label: 'Gross Sales / Receipts', amount: rev },
+      { label: 'Less: Cost of Goods Sold / Services', amount: cos },
+      { label: 'Gross Profit', amount: grossProfit, type: 'subtotal' },
+      itemized ? { label: 'Less: Total Allowable Itemized Deductions (Operating Expenses)', amount: opex } : { label: 'Less: OSD (40% of gross income)', amount: opex },
+      { label: 'Add: Other Income', amount: other, editable: 'otherIncome' },
+      { label: 'Less: Other Deductions', amount: otherDed, editable: 'otherDeductions' },
+      { label: 'Net Taxable Income this Quarter', amount: taxableQ, type: 'subtotal' },
+      { label: 'Add: Taxable Income — Previous Quarter/s', amount: prev, editable: 'taxableIncomePrev' },
+      { label: 'Net Taxable Income (to date)', amount: toDate, type: 'subtotal' }
     );
+    if (!tt.only) lines.push({ label: tt.label + ' on Net Taxable Income', amount: regular });
+    if (tt.mcit) {
+      lines.push(
+        { label: (useSales ? 'Gross Sales' : 'Gross Income') + ' — Previous Quarter/s (for MCIT)', amount: r2(p.grossIncomePrev), editable: 'grossIncomePrev' },
+        { label: 'MCIT Base (cumulative ' + (useSales ? 'gross sales' : 'gross income') + ')', amount: mcitBase },
+        { label: 'MCIT ' + (mcitRate * 100) + '%' + (mcitOn ? '' : ' — not applicable (first 3 years)'), amount: mcit }
+      );
+    }
+    lines.push({ label: 'Tax Due (' + taxLabel + ')', amount: r2(taxDue), type: 'total' });
 
-    const c = credits(i);
-    return finish('1702Q', 'Schedule I — Regular/Normal Rate' + (itemized ? ' (Itemized Deductions)' : ' (OSD)'), lines, c, taxDue, toDate, warnings, q);
+    return finish('1702Q', 'Regular Income Tax — ' + (itemized ? 'Itemized' : 'OSD') + ' · ' + tt.label, lines, credits(i), taxDue, toDate, warnings, q);
   }
 
   function finish(form, schedule, lines, c, taxDue, taxableToDate, warnings, q) {
-    const payable = r2(taxDue - c.total);
-    if (payable < 0) warnings.push('Tax credits exceed the tax due — this quarter shows an overpayment of ₱' + Math.abs(payable).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + '.');
+    // Tax Calc logic: Tax Still Due = max(0, Tax Due − credits); any excess is carried over
+    const net = r2(taxDue - c.total);
+    const stillDue = r2(Math.max(0, net));
+    const excess = r2(Math.max(0, -net));
+    if (excess > 0) warnings.push('Credits exceed the tax due by ₱' + excess.toLocaleString('en-PH', { minimumFractionDigits: 2 }) + '. Tax Still Due is ₱0.00 and the excess carries over to the next quarter.');
     if (q === 1 && (c.items[1].amount || c.items[2].amount)) warnings.push('Q1 returns normally have no previous-quarter payments or withholding.');
     return {
       form, schedule, lines,
       credits: c.items, totalCredits: c.total,
       taxDue: r2(taxDue), taxableToDate: r2(taxableToDate),
-      taxPayable: payable, warnings
+      taxPayable: stillDue, excessCredits: excess, warnings
     };
   }
 
@@ -179,7 +202,10 @@
     return input.form === '1702Q' ? compute1702Q(input) : compute1701Q(input);
   }
 
-  const api = { compute, graduatedTax, entertainmentCap, r2 };
+  /** Auto-compute CWT: 1% of revenue for goods, 2% for services (RR 11-2018 / RR 31-2019) */
+  function autoCWT(revenue, kind) { return r2(pos(revenue) * (kind === 'Services' ? 0.02 : 0.01)); }
+
+  const api = { compute, graduatedTax, entertainmentCap, autoCWT, TAX_TYPES, r2 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ITRTax = api;
 })(typeof window !== 'undefined' ? window : globalThis);

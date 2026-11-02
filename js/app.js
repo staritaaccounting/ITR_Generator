@@ -60,15 +60,22 @@
 
   /* ======================= state ======================= */
   const thisYear = new Date().getFullYear();
+  // Taxable years: 2026 and upwards (ascending)
+  const FIRST_YEAR = CFG.FIRST_YEAR || 2026;
+  const LAST_YEAR = Math.max(thisYear, FIRST_YEAR) + (CFG.YEARS_AHEAD || 4);
+  const DEFAULT_YEAR = Math.min(Math.max(thisYear, FIRST_YEAR), LAST_YEAR);
+  const yearOptions = () => { let h = ''; for (let y = FIRST_YEAR; y <= LAST_YEAR; y++) h += '<option value="' + y + '">' + y + '</option>'; return h; };
+  const validYear = (y) => (Number(y) >= FIRST_YEAR && Number(y) <= LAST_YEAR ? Number(y) : DEFAULT_YEAR);
   const S = {
     token: localStorage.getItem(LS.token),
     user: JSON.parse(localStorage.getItem(LS.user) || 'null'),
     clients: [], client: null,
-    year: thisYear, quarter: null, form: null,
-    opts: { method: 'itemized', rcitRate: 0.25, mcitApplies: false, mcitRate: 0.02, mixedIncome: false, sellerOf: 'Goods' },
+    year: DEFAULT_YEAR, quarter: null, form: null,
+    opts: { method: 'itemized', taxType: 'rcit25', mcitBase: 'income', mcitExempt: false, mcitRate: 0.02, mixedIncome: false, sellerOf: 'Goods' },
+    cwt: { mode: 'none', manual: 0, kind: 'Goods' },
     salesType: 'VAT',
     preset: JSON.parse(localStorage.getItem('itr_landing') || 'null'),
-    files: { sales: [], prior: [], expenses: [] },
+    files: { sales: [], prior: [], expenses: [], cwt: [] },
     R: null, busy: false
   };
 
@@ -233,10 +240,9 @@
   /* ---------- landing ---------- */
   (function initLanding() {
     const sel = $('#ldYear');
-    const back = CFG.MAX_YEARS_BACK || 6;
-    for (let y = thisYear; y >= thisYear - back; y--) sel.insertAdjacentHTML('beforeend', '<option value="' + y + '">' + y + '</option>');
+    sel.innerHTML = yearOptions();
     const p = S.preset || {};
-    sel.value = String(p.year && p.year >= thisYear - back ? p.year : thisYear);
+    sel.value = String(validYear(p.year));
     $('#ldFormSel').value = p.form === '1702Q' ? '1702Q' : '1701Q';
     setLdVat(p.vat === 'Non-VAT' ? 'Non-VAT' : 'VAT');
     $('#ldVat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setLdVat(b.dataset.v); });
@@ -262,7 +268,7 @@
   }
   function syncLanding() {
     const p = S.preset;
-    if (p) { $('#ldYear').value = String(p.year); $('#ldFormSel').value = p.form; setLdVat(p.vat); }
+    if (p) { p.year = validYear(p.year); $('#ldYear').value = String(p.year); $('#ldFormSel').value = p.form; setLdVat(p.vat); }
     const signed = !!S.token;
     $('#ldHello').hidden = !signed;
     $('#ldHello').textContent = signed ? 'Signed in as ' + ((S.user && S.user.name) || '') : '';
@@ -270,6 +276,7 @@
   }
   async function enterApp() {
     const p = S.preset || landingValues();
+    p.year = validYear(p.year);
     const changed = S.year !== p.year || S.form !== p.form || S.salesType !== p.vat;
     S.year = p.year; S.form = p.form; S.salesType = p.vat;
     $('#yearSelect').value = String(S.year);
@@ -491,6 +498,7 @@
         (c.forms ? '<div style="grid-column:1/-1"><small>Enrolled BIR forms</small><b class="forms">' + esc(c.forms) + '</b></div>' : '');
       $('#clientCard').hidden = false;
       S.opts.sellerOf = c.sellerOf || 'Goods';
+      S.cwt.kind = c.sellerOf === 'Services' ? 'Services' : 'Goods';
       if (changed) {
         // BIR Form and VAT status come from the landing page selection; fall back to the client record
         S.form = (S.preset && S.preset.form) || (c.type === 'Corporation' ? '1702Q' : '1701Q');
@@ -508,12 +516,11 @@
   /* ======================= step 2: period & form ======================= */
   (function initYears() {
     const sel = $('#yearSelect');
-    const back = CFG.MAX_YEARS_BACK || 6;
-    for (let y = thisYear; y >= thisYear - back; y--) sel.insertAdjacentHTML('beforeend', '<option value="' + y + '">' + y + '</option>');
+    sel.innerHTML = yearOptions();
     sel.value = String(S.year);
     sel.addEventListener('change', () => { S.year = Number(sel.value); setPreset('year', S.year); onPeriodChange(); });
-    $('#yearPrev').addEventListener('click', () => { if (sel.selectedIndex < sel.options.length - 1) { sel.selectedIndex++; sel.dispatchEvent(new Event('change')); } });
-    $('#yearNext').addEventListener('click', () => { if (sel.selectedIndex > 0) { sel.selectedIndex--; sel.dispatchEvent(new Event('change')); } });
+    $('#yearPrev').addEventListener('click', () => { if (sel.selectedIndex > 0) { sel.selectedIndex--; sel.dispatchEvent(new Event('change')); } });
+    $('#yearNext').addEventListener('click', () => { if (sel.selectedIndex < sel.options.length - 1) { sel.selectedIndex++; sel.dispatchEvent(new Event('change')); } });
   })();
 
   $('#quarterSeg').addEventListener('click', (e) => {
@@ -560,7 +567,8 @@
       if (vat && o.method === 'eight') o.method = 'itemized';
       html += '<label class="field"><span>Tax method</span><select data-opt="method">' +
         '<option value="itemized"' + (o.method === 'itemized' ? ' selected' : '') + '>Graduated rates — Itemized deductions</option>' +
-        '<option value="osd"' + (o.method === 'osd' ? ' selected' : '') + '>Graduated rates — OSD (40% of sales)</option>' +
+        '<option value="osd"' + (o.method === 'osd' ? ' selected' : '') + '>Graduated rates — OSD 40% of gross sales (BIR rule)</option>' +
+        '<option value="osd_gi"' + (o.method === 'osd_gi' ? ' selected' : '') + '>Graduated rates — OSD 40% of gross income (Tax Calc)</option>' +
         '<option value="eight"' + (o.method === 'eight' ? ' selected' : '') + (vat ? ' disabled' : '') + '>8% income tax option' + (vat ? ' (non-VAT only)' : '') + '</option>' +
         '</select></label>';
       if (o.method === 'eight') {
@@ -570,13 +578,17 @@
       html += '<label class="field"><span>Deduction method</span><select data-opt="method">' +
         '<option value="itemized"' + (o.method === 'itemized' ? ' selected' : '') + '>Itemized deductions</option>' +
         '<option value="osd"' + (o.method === 'osd' ? ' selected' : '') + '>OSD (40% of gross income)</option></select></label>';
-      html += '<label class="field"><span>Income tax rate</span><select data-opt="rcitRate">' +
-        [[0.25, '25% — Regular corporate rate'], [0.20, '20% — NTI ≤ ₱5M & assets ≤ ₱100M'], [0.10, '10% — Proprietary educational / hospital'], [0.30, '30% — Pre-CREATE (before Jul 2020)']]
-          .map(([v, l]) => '<option value="' + v + '"' + (o.rcitRate === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>';
-      html += '<label class="check"><input type="checkbox" data-opt="mcitApplies"' + (o.mcitApplies ? ' checked' : '') + ' /><span>Subject to MCIT<small>From the 4th taxable year of operations</small></span></label>';
-      if (o.mcitApplies) {
+      const TT = window.ITRTax.TAX_TYPES;
+      html += '<label class="field"><span>Tax type</span><select data-opt="taxType">' +
+        [['rcit25', 'RCIT 25% (or MCIT, whichever is higher)'], ['rcit20', 'RCIT 20% (or MCIT) — NTI ≤ ₱5M & assets ≤ ₱100M'], ['mcit', 'MCIT only (2% of gross)'], ['iaet10', 'IAET 10%'], ['nonres25', 'RCIT — Non-Resident 25%']]
+          .map(([v, l]) => '<option value="' + v + '"' + (o.taxType === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>';
+      if (TT[o.taxType] && TT[o.taxType].mcit) {
+        html += '<label class="field"><span>MCIT base</span><select data-opt="mcitBase">' +
+          '<option value="income"' + (o.mcitBase !== 'sales' ? ' selected' : '') + '>Gross income (NIRC rule)</option>' +
+          '<option value="sales"' + (o.mcitBase === 'sales' ? ' selected' : '') + '>Gross sales (Tax Calc)</option></select></label>';
         html += '<label class="field"><span>MCIT rate</span><select data-opt="mcitRate">' +
           [[0.02, '2%'], [0.01, '1% (Jul 2020 – Jun 2023)']].map(([v, l]) => '<option value="' + v + '"' + (o.mcitRate === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>';
+        if (o.taxType !== 'mcit') html += '<label class="check"><input type="checkbox" data-opt="mcitExempt"' + (o.mcitExempt ? ' checked' : '') + ' /><span>New corporation<small>First 3 years — not yet subject to MCIT</small></span></label>';
       }
     }
     if (o.method === 'itemized') {
@@ -588,7 +600,7 @@
   $('#taxOptions').addEventListener('change', (e) => {
     const k = e.target.dataset.opt; if (!k) return;
     const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    S.opts[k] = ['rcitRate', 'mcitRate'].includes(k) ? Number(v) : v;
+    S.opts[k] = k === 'mcitRate' ? Number(v) : v;
     refresh();
     if (S.R) renderResults();
   });
@@ -615,7 +627,7 @@
     refresh();
   }
   function renderFiles() {
-    ['sales', 'prior', 'expenses'].forEach((t) => {
+    ['sales', 'prior', 'expenses', 'cwt'].forEach((t) => {
       $('[data-list="' + t + '"]').innerHTML = S.files[t].map((x) =>
         '<li><span class="fi ' + x.kind + '">' + ({ pdf: 'PDF', img: 'IMG', xls: 'XLS' }[x.kind]) + '</span>' +
         '<span class="fn" title="' + esc(x.file.name) + '">' + esc(x.file.name) + '</span>' +
@@ -624,7 +636,7 @@
     });
     $('#expHint').hidden = S.files.expenses.length > 0;
   }
-  function clearFiles() { S.files = { sales: [], prior: [], expenses: [] }; renderFiles(); }
+  function clearFiles() { S.files = { sales: [], prior: [], expenses: [], cwt: [] }; renderFiles(); }
 
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-rm]'); if (!b) return;
@@ -645,6 +657,30 @@
   ['dragenter', 'dragover'].forEach((ev) => expBox.addEventListener(ev, (e) => { e.preventDefault(); expBox.style.borderColor = '#1d4a7e'; }));
   ['dragleave', 'drop'].forEach((ev) => expBox.addEventListener(ev, (e) => { e.preventDefault(); expBox.style.borderColor = ''; }));
   expBox.addEventListener('drop', (e) => addFiles('expenses', e.dataTransfer.files));
+
+  function renderCwt() {
+    $$('#cwtMode button').forEach((b) => { const on = b.dataset.v === S.cwt.mode; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    $$('#cwtKind button').forEach((b) => { const on = b.dataset.v === S.cwt.kind; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    $$('.cwt-pane').forEach((p) => { p.hidden = p.dataset.cwt !== S.cwt.mode; });
+  }
+  $('#cwtMode').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.cwt.mode = b.dataset.v;
+    if (S.R) { applyCwtMode(); renderResults(); }
+    renderCwt(); refresh();
+    if (S.cwt.mode === 'manual') setTimeout(() => $('#cwtManual').focus(), 50);
+  });
+  $('#cwtKind').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.cwt.kind = b.dataset.v;
+    if (S.R) { applyCwtMode(); renderResults(); }
+    renderCwt();
+  });
+  $('#cwtManual').addEventListener('change', (e) => {
+    S.cwt.manual = parseNum(e.target.value);
+    e.target.value = S.cwt.manual ? plain(S.cwt.manual) : '';
+    if (S.R) { applyCwtMode(); renderResults(); }
+  });
 
   function renderUploadLabels() {
     const vat = S.salesType === 'VAT';
@@ -667,7 +703,7 @@
   }
   /* ======================= refresh UI state ======================= */
   function refresh() {
-    const s1 = !!S.client, s2 = s1 && !!S.quarter && !!S.form, s3 = s2 && S.files.sales.length > 0;
+    const s1 = !!S.client, s2 = s1 && !!S.quarter && !!S.form, s3 = s2 && S.files.sales.length > 0 && (S.cwt.mode !== 'upload' || S.files.cwt.length > 0);
     $('#step2').classList.toggle('locked', !s1);
     $('#step3').classList.toggle('locked', !s2);
     $$('#quarterSeg button').forEach((b) => { const on = Number(b.dataset.v) === S.quarter; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
@@ -688,6 +724,7 @@
     });
     renderOptions();
     renderUploadLabels();
+    renderCwt();
     $('#analyzeBtn').disabled = !s3 || S.busy;
     const st = [s1, s2, s3, !!S.R];
     const firstOpen = st.indexOf(false);
@@ -752,26 +789,121 @@
   }
 
   /* ======================= expense % modal ======================= */
-  function askPercent() {
+  /**
+   * Asks which expense rates to use when no expense documents were uploaded.
+   * With a previous-quarter ITR: two fields (cost of sales %, operating expenses %) pre-filled with that quarter's rates.
+   * Without one: a single total % (Muse Spark decides the mix).
+   * Resolves to {mode:'split', cos, opex} | {mode:'total', pct} | null (cancelled).
+   */
+  function askPercent(ctx) {
     return new Promise((resolve) => {
-      const m = $('#expenseModal');
+      const rev = ctx.revenue || 0, prev = ctx.prev;
+      const split = !!prev;
+      $('#pctSplit').hidden = !split;
+      $('#pctTotal').hidden = split;
+      $('#emTitle').textContent = 'No expenses provided';
+      const qNow = 'Q' + S.quarter + ' ' + S.year;
+      if (split) {
+        $('#emIntro').innerHTML = 'Based on the <b>' + esc(prev.label) + '</b> ITR, cost of sales was <b>' + prev.cos + '%</b> of revenue and ' +
+          (prev.opex == null ? 'operating expenses (Total Allowable Itemized Deductions) were <b>not itemized</b> because OSD/8% was used, so enter a rate for them.' : 'operating expenses (Total Allowable Itemized Deductions) were <b>' + prev.opex + '%</b> of revenue.') +
+          ' Keep these rates for ' + qNow + ' or adjust them.';
+        $('#pctCos').value = prev.cos;
+        $('#pctOpex').value = prev.opex == null ? '' : prev.opex;
+        $('#pctOpexPrev').textContent = '';
+      } else {
+        $('#emIntro').textContent = (S.quarter > 1 ? 'No previous quarter ITR was read, so there are no earlier rates to carry over. ' : '') +
+          'Muse Spark will estimate this client\'s expenses from its line of business. What percentage of revenue should be applied as expenses?';
+      }
       const num = $('#pctNumber'), rng = $('#pctRange');
-      const sync = (v) => {
-        v = Math.min(100, Math.max(1, Number(v) || 0));
-        num.value = v; rng.value = v;
-        $$('#pctChips button').forEach((b) => b.classList.toggle('on', Number(b.dataset.p) === v));
-        $('#pctPreview').textContent = 'Expenses = ' + v + '% of the revenue found in the sales return.';
+      const update = () => {
+        if (split) {
+          const c = Math.max(0, Number($('#pctCos').value) || 0), o = Math.max(0, Number($('#pctOpex').value) || 0);
+          const mark = (el, now, was) => {
+            if (was == null) { el.className = 'changed'; el.textContent = 'Previous ITR used OSD/8%. Enter a rate.'; return; }
+            const same = Math.abs(now - was) < 0.005;
+            el.className = same ? '' : 'changed';
+            el.textContent = same ? 'Same as ' + prev.label.split(' ').slice(0, 2).join(' ') : 'Changed from ' + was + '%';
+          };
+          mark($('#pctCosPrev'), c, prev.cos); mark($('#pctOpexPrev'), o, prev.opex);
+          $('#pctCosAmt').textContent = money(rev * c / 100);
+          $('#pctOpexAmt').textContent = money(rev * o / 100);
+          $('#pctSplitTotal').textContent = r2(c + o) + '% · ' + money(rev * (c + o) / 100);
+          $('#pctPreview').textContent = 'Applied to ' + qNow + ' revenue of ' + money(rev) + '.';
+        } else {
+          let v = Math.min(100, Math.max(1, Number(num.value) || 0));
+          num.value = v; rng.value = v;
+          $$('#pctChips button').forEach((b) => b.classList.toggle('on', Number(b.dataset.p) === v));
+          $('#pctPreview').textContent = 'Expenses = ' + v + '% of ' + money(rev) + ' = ' + money(rev * v / 100) + '. You can split it into cost of sales and operating expenses on the results screen.';
+        }
       };
-      sync(num.value);
-      num.oninput = () => sync(num.value);
-      rng.oninput = () => sync(rng.value);
-      $('#pctChips').onclick = (e) => { const b = e.target.closest('button'); if (b) sync(b.dataset.p); };
+      $('#pctCos').oninput = update; $('#pctOpex').oninput = update;
+      $('#pctResetPrev').onclick = () => { $('#pctCos').value = prev.cos; $('#pctOpex').value = prev.opex == null ? '' : prev.opex; update(); };
+      num.oninput = () => { $$('#pctChips button').forEach((b) => b.classList.remove('on')); };
+      num.onchange = update; rng.oninput = () => { num.value = rng.value; update(); };
+      $('#pctChips').onclick = (e) => { const b = e.target.closest('button'); if (b) { num.value = b.dataset.p; update(); } };
+      update();
       let done = false;
-      $('#pctConfirm').onclick = () => { done = true; closeModal('#expenseModal'); resolve(Number(num.value)); };
-      m.addEventListener('closed', () => { if (!done) resolve(null); }, { once: true });
+      $('#pctConfirm').onclick = () => {
+        let out;
+        if (split) {
+          const c = Number($('#pctCos').value), o = Number($('#pctOpex').value);
+          if ($('#pctOpex').value === '' || isNaN(o) || isNaN(c)) { toast('Enter both rates (use 0 if none).', 'err'); return; }
+          if (c < 0 || o < 0 || c + o <= 0 || c + o > 100) { toast('The rates must add up to more than 0% and at most 100%.', 'err'); return; }
+          out = { mode: 'split', cos: r2(c), opex: r2(o) };
+        } else {
+          update();
+          out = { mode: 'total', pct: Number(num.value) };
+        }
+        done = true; closeModal('#expenseModal'); resolve(out);
+      };
+      $('#expenseModal').addEventListener('closed', () => { if (!done) resolve(null); }, { once: true });
       openModal('#expenseModal');
-      setTimeout(() => num.focus(), 60);
+      setTimeout(() => (split ? $('#pctCos') : num).focus(), 60);
     });
+  }
+
+  /** Cost of sales % and operating expense % of revenue, from the previous quarter's ITR */
+  function priorRates(prior) {
+    if (!prior) return null;
+    const d = prior.d.data;
+    const sales = Number(d.sales_this_quarter) || 0;
+    if (sales <= 0) return null;
+    const cos = Number(d.cost_of_sales_this_quarter) || 0;
+    const ded = Number(d.deductions_this_quarter) || 0;
+    const near = (a, b) => Math.abs(a - b) <= Math.max(1, b * 0.001);
+    // Trust the method printed on the return; only guess (deductions ≈ 40%) when the method could not be read
+    const osdLike = d.method === 'osd' || d.method === '8%' ||
+      (d.method !== 'itemized' && ded > 0 && (near(ded, sales * 0.4) || near(ded, (sales - cos) * 0.4)));
+    return {
+      cos: r2(cos / sales * 100),
+      opex: osdLike ? null : r2(ded / sales * 100),
+      label: 'Q' + (d.quarter || S.quarter - 1) + ' ' + (d.year || S.year) + ' ' + (d.form_detected || S.form),
+      sales, cosAmt: cos, opexAmt: osdLike ? null : ded
+    };
+  }
+
+  /** Rescale estimated expense items so each category equals revenue × its rate */
+  function rescaleAuto(R) {
+    if (!R.auto) return;
+    const want = { cost_of_sales: R.auto.cosPct, operating_expense: R.auto.opexPct };
+    Object.keys(want).forEach((cat) => {
+      const pct = Math.max(0, Number(want[cat]) || 0);
+      let list = R.items.filter((i) => i.auto && i.category === cat);
+      if (pct > 0 && !list.length) {
+        const it = { auto: true, file: 'Estimated', date: '', vendor: '', vat_amount: 0, share: 1, category: cat,
+          account: cat === 'cost_of_sales' ? (S.client.sellerOf === 'Services' ? 'Cost of Services' : 'Purchases / Cost of Goods Sold') : 'Miscellaneous Expense' };
+        R.items.push(it); list = [it];
+      }
+      const totalShare = list.reduce((s, i) => s + (i.share || 0), 0) || 1;
+      const target = r2(R.revenue * pct / 100);
+      list.forEach((i) => {
+        i.amount = r2(target * (i.share || 0) / totalShare);
+        i.description = 'Estimated: ' + pct + '% of revenue × ' + r2((i.share || 0) / totalShare * 100) + '% share';
+      });
+      const diff = r2(target - list.reduce((s, i) => s + i.amount, 0));
+      if (diff && list.length) { const big = list.reduce((a, b) => (b.amount > a.amount ? b : a)); big.amount = r2(big.amount + diff); }
+    });
+    R.items = R.items.filter((i) => !i.auto || i.amount > 0 || (want[i.category] > 0));
   }
 
   /* ======================= analyze ======================= */
@@ -791,11 +923,7 @@
 
   async function analyze() {
     if (S.busy) return;
-    let autoPct = null;
-    if (!S.files.expenses.length) {
-      autoPct = await askPercent();
-      if (autoPct == null) return;
-    }
+    const needEstimate = !S.files.expenses.length;
     S.busy = true; refresh();
     $('#progList').innerHTML = '';
     $('#pmClose').hidden = true;
@@ -808,9 +936,10 @@
     const jobs = []
       .concat(S.files.sales.map((x) => ({ x, docType: salesDoc, label: 'Sales return (' + (S.salesType === 'VAT' ? '2550Q' : '2551Q') + ')' })))
       .concat(S.files.prior.map((x) => ({ x, docType: 'prior_itr', label: 'Previous quarter ' + S.form })))
-      .concat(S.files.expenses.map((x) => ({ x, docType: 'expenses', label: 'Expenses' })));
+      .concat(S.files.expenses.map((x) => ({ x, docType: 'expenses', label: 'Expenses' })))
+      .concat(S.cwt.mode === 'upload' ? S.files.cwt.map((x) => ({ x, docType: 'form_2307', label: 'BIR 2307' })) : []);
     jobs.forEach((j) => { j.p = progItem(j.x.file.name, j.label + ' · waiting'); });
-    const autoP = autoPct != null ? progItem('Auto-generate expenses', autoPct + '% of revenue · waiting for revenue') : null;
+    const autoP = needEstimate ? progItem('Estimate cost of sales & expenses', 'No expense files · waiting for revenue and previous ITR') : null;
     const taxP = progItem('Compute ' + S.form + ' tax due', 'waiting');
 
     const common = { clientId: S.client.id, year: S.year, quarter: S.quarter, form: S.form, vat: S.salesType };
@@ -820,7 +949,8 @@
         const file = await prepareFile(j.x);
         j.p.run(j.label + ' · Muse Spark is reading…');
         const d = await api('extract', Object.assign({ docType: j.docType, file }, common));
-        const info = j.docType === 'expenses' ? d.data.items.length + ' items · ' + money(d.data.document_total)
+        const info = j.docType === 'form_2307' ? d.data.certificates.length + ' certificate' + (d.data.certificates.length === 1 ? '' : 's') + ' · CWT ' + money(d.data.total_tax_withheld)
+          : j.docType === 'expenses' ? d.data.items.length + ' items · ' + money(d.data.document_total)
           : j.docType === 'prior_itr' ? 'Taxable income to date ' + money(d.data.total_taxable_income_to_date)
             : 'Revenue ' + money(d.data.revenue);
         j.p.ok(j.label + ' · ' + info);
@@ -831,7 +961,8 @@
       }
     });
 
-    const sales = results.filter((r) => r.ok && r.job.docType !== 'prior_itr' && r.job.docType !== 'expenses');
+    const sales = results.filter((r) => r.ok && (r.job.docType === 'sales_vat' || r.job.docType === 'sales_nonvat'));
+    const certs = results.filter((r) => r.ok && r.job.docType === 'form_2307');
     const prior = results.filter((r) => r.ok && r.job.docType === 'prior_itr')[0];
     const exps = results.filter((r) => r.ok && r.job.docType === 'expenses');
     const failed = results.filter((r) => !r.ok);
@@ -843,22 +974,44 @@
       return;
     }
 
-    const R = buildResult(sales, prior, exps, failed);
-    if (autoPct != null) {
+    const R = buildResult(sales, prior, exps, failed, certs);
+    if (needEstimate) {
+      // Rates from the previous quarter's ITR (cost of sales and itemized deductions ÷ its revenue)
+      const prev = priorRates(prior);
+      autoP.run(prev ? 'Previous quarter: cost of sales ' + prev.cos + '% · expenses ' + (prev.opex == null ? 'n/a' : prev.opex + '%') + ' — waiting for your rates' : 'Waiting for your expense rate');
+      closeModal('#progressModal');
+      const choice = await askPercent({ revenue: R.revenue, prev });
+      if (!choice) {
+        S.busy = false; refresh();
+        toast('Analysis cancelled. Nothing was changed.', '');
+        return;
+      }
+      openModal('#progressModal');
       try {
-        autoP.run('Muse Spark is allocating ' + autoPct + '% of ' + money(R.revenue) + '…');
-        const a = await api('autoExpenses', Object.assign({ revenue: R.revenue, percent: autoPct }, common));
-        R.items = a.items.map((it) => Object.assign({ file: 'Auto-generated (' + autoPct + '%)' }, it));
+        const payload = choice.mode === 'split' ? { cosPercent: choice.cos, opexPercent: choice.opex } : { percent: choice.pct };
+        autoP.run('Muse Spark is allocating expenses into accounts…');
+        const a = await api('autoExpenses', Object.assign({ revenue: R.revenue }, payload, common));
+        // share = fraction of the item within its category (lets the rates be adjusted later)
+        const catSum = {};
+        a.items.forEach((it) => { catSum[it.category] = (catSum[it.category] || 0) + it.amount; });
+        R.items = a.items.map((it) => Object.assign({ file: 'Estimated', auto: true }, it, { share: it.share != null ? it.share : (catSum[it.category] ? it.amount / catSum[it.category] : 0) }));
         R.expenseSource = 'auto';
-        R.auto = { percent: autoPct, target: a.target, rationale: a.rationale, source: a.source };
-        autoP.ok(a.items.length + ' accounts · ' + money(a.target) + (a.source === 'template' ? ' (standard template)' : ''));
+        R.auto = {
+          basis: choice.mode === 'split' && prev ? 'prior' : 'manual',
+          cosPct: a.cosPercent != null ? a.cosPercent : r2(a.items.filter((i) => i.category === 'cost_of_sales').reduce((t, i) => t + i.amount, 0) / R.revenue * 100),
+          opexPct: a.opexPercent != null ? a.opexPercent : r2(a.items.filter((i) => i.category === 'operating_expense').reduce((t, i) => t + i.amount, 0) / R.revenue * 100),
+          prev, rationale: a.rationale, source: a.source
+        };
+        if (choice.mode === 'split') { R.auto.cosPct = choice.cos; R.auto.opexPct = choice.opex; }
+        autoP.ok('Cost of sales ' + R.auto.cosPct + '% · expenses ' + R.auto.opexPct + '% of revenue · ' + a.items.length + ' accounts');
       } catch (e) {
         autoP.err(e.message);
-        R.warnings.push('Auto-generated expenses failed: ' + e.message);
+        R.warnings.push('Estimating expenses failed: ' + e.message);
       }
     }
-    taxP.ok('Done');
     S.R = R;
+    applyCwtMode();
+    taxP.ok('Done');
     $('.spark-orb').classList.add('done');
     await sleep(failed.length ? 1600 : 700);
     closeModal('#progressModal');
@@ -880,7 +1033,7 @@
 
   const tinDigits = (t) => String(t || '').replace(/\D/g, '').slice(0, 9);
 
-  function buildResult(sales, prior, exps, failed) {
+  function buildResult(sales, prior, exps, failed, certs) {
     const W = [];
     const c = S.client;
     const revenueLines = [];
@@ -938,15 +1091,44 @@
     });
     failed.forEach((f) => W.push('Could not read ' + f.job.x.file.name + ': ' + f.error));
 
+    const certList = [];
+    (certs || []).forEach((r) => {
+      r.d.data.certificates.forEach((c) => {
+        certList.push(Object.assign({ file: r.d.fileName }, c));
+        if (c.year && c.quarter && (c.year !== S.year || c.quarter !== S.quarter)) W.push('2307 from ' + (c.payor_name || r.d.fileName) + ' is for Q' + c.quarter + ' ' + c.year + ', not Q' + S.quarter + ' ' + S.year + '. Check before claiming it.');
+        if (c.payee_tin && S.client.tin && tinDigits(c.payee_tin) !== tinDigits(S.client.tin)) W.push('2307 from ' + (c.payor_name || r.d.fileName) + ' is issued to TIN ' + c.payee_tin + ', not the client\'s TIN.');
+      });
+      if (r.d.data.confidence === 'low') W.push('Muse Spark has low confidence reading the 2307 ' + r.d.fileName + (r.d.data.notes ? ': ' + r.d.data.notes : '.'));
+    });
+
     return {
       revenueLines, revenue: r2(revenue), revenueAuto: r2(revenue),
-      otherIncome: 0, cwtThisQ: 0, otherCredits: 0,
+      otherIncome: 0, otherDeductions: 0, cwtThisQ: 0, excessMcit: 0, otherCredits: 0,
+      certs: certList, cwtUploaded: r2(certList.reduce((s, c) => s + c.total_tax_withheld, 0)), cwtEdited: false,
       prior: P,
       items, overrides: {}, open: {},
       expenseSource: 'documents', auto: null,
-      docs: sales.concat(prior ? [prior] : [], exps).map((r) => ({ type: r.job.docType, file: r.d.fileName, data: r.d.data, url: r.d.archivedUrl })),
+      docs: sales.concat(prior ? [prior] : [], exps, certs || []).map((r) => ({ type: r.job.docType, file: r.d.fileName, data: r.d.data, url: r.d.archivedUrl })),
       warnings: W
     };
+  }
+
+  /* ======================= CWT (BIR 2307) ======================= */
+  function applyCwtMode() {
+    const R = S.R; if (!R) return;
+    R.cwtEdited = false;
+    R.cwtThisQ = S.cwt.mode === 'upload' ? R.cwtUploaded : S.cwt.mode === 'manual' ? r2(S.cwt.manual) : 0;
+  }
+  function cwtInfo(R) {
+    const m = S.cwt.mode;
+    if (R.cwtEdited) return { amount: R.cwtThisQ, note: 'Edited in the results' };
+    if (m === 'auto') {
+      const amt = window.ITRTax.autoCWT(R.revenue, S.cwt.kind);
+      return { amount: amt, note: 'Auto: ' + (S.cwt.kind === 'Services' ? '2%' : '1%') + ' of revenue ' + money(R.revenue) + ' (' + S.cwt.kind.toLowerCase() + ')' };
+    }
+    if (m === 'upload') return { amount: R.cwtThisQ, note: 'From ' + R.certs.length + ' BIR 2307 certificate' + (R.certs.length === 1 ? '' : 's') };
+    if (m === 'manual') return { amount: R.cwtThisQ, note: 'Entered manually' };
+    return { amount: R.cwtThisQ, note: R.cwtThisQ ? '' : 'No 2307 claimed' };
   }
 
   /* ======================= consolidation & computation ======================= */
@@ -970,27 +1152,30 @@
 
   function model() {
     const R = S.R, o = S.opts;
+    rescaleAuto(R);
     const accts = accounts(R);
     const sum = (cat) => r2(accts.filter((a) => a.category === cat).reduce((s, a) => s + a.amount, 0));
     const cos = sum('cost_of_sales'), opex = sum('operating_expense'), nonded = sum('non_deductible');
     const ent = window.ITRTax.entertainmentCap(accts, R.revenue, o.sellerOf);
     const deductibleOpex = r2(opex - (o.method === 'itemized' ? ent.disallowed : 0));
+    const cw = cwtInfo(R);
     const tax = window.ITRTax.compute({
       form: S.form, year: S.year, quarter: S.quarter, method: o.method,
       vatStatus: S.salesType, mixedIncome: o.mixedIncome,
-      rcitRate: o.rcitRate, mcitApplies: o.mcitApplies, mcitRate: o.mcitRate,
-      revenue: R.revenue, otherIncome: R.otherIncome, costOfSales: cos, opex: deductibleOpex,
-      prior: R.prior, cwtThisQ: R.cwtThisQ, otherCredits: R.otherCredits
+      taxType: o.taxType, mcitBase: o.mcitBase, mcitExempt: o.mcitExempt, mcitRate: o.mcitRate,
+      revenue: R.revenue, otherIncome: R.otherIncome, otherDeductions: R.otherDeductions, costOfSales: cos, opex: deductibleOpex,
+      prior: R.prior, cwtThisQ: cw.amount, cwtNote: cw.note, excessMcit: R.excessMcit, otherCredits: R.otherCredits
     });
     const methodLabel = S.form === '1701Q'
-      ? ({ itemized: 'Graduated rates — Itemized deductions', osd: 'Graduated rates — OSD (40%)', eight: '8% income tax option' + (o.mixedIncome ? ' (mixed income)' : '') }[o.method])
-      : (o.method === 'osd' ? 'OSD (40% of gross income)' : 'Itemized deductions') + ' · RCIT ' + (o.rcitRate * 100) + '%' + (o.mcitApplies ? ' · MCIT ' + (o.mcitRate * 100) + '%' : '');
+      ? ({ itemized: 'Graduated rates — Itemized deductions', osd: 'Graduated rates — OSD 40% of gross sales', osd_gi: 'Graduated rates — OSD 40% of gross income', eight: '8% income tax option' + (o.mixedIncome ? ' (mixed income)' : '') }[o.method])
+      : (o.method === 'osd' ? 'OSD (40% of gross income)' : 'Itemized deductions') + ' · ' + window.ITRTax.TAX_TYPES[o.taxType].label +
+        (window.ITRTax.TAX_TYPES[o.taxType].mcit && !(o.mcitExempt && o.taxType !== 'mcit') ? ' · MCIT ' + (o.mcitRate * 100) + '% of ' + (o.mcitBase === 'sales' ? 'gross sales' : 'gross income') : '');
     return {
       client: S.client, year: S.year, quarter: S.quarter, form: S.form, method: o.method, methodLabel,
       revenueLines: R.revenueLines, revenue: R.revenue, revenueEdited: R.revenue !== R.revenueAuto,
       accounts: accts, cos, opex, nonded, ent, deductibleOpex,
       grossProfit: r2(R.revenue - cos), netIncome: r2(R.revenue - cos - opex),
-      tax, R, user: S.user
+      tax, R, user: S.user, cwt: { mode: S.cwt.mode, kind: S.cwt.kind, note: cw.note }
     };
   }
 
@@ -1026,7 +1211,7 @@
     const warn = R.warnings.concat(T.warnings);
     if (M.ent.disallowed > 0) warn.push('Representation & entertainment of ' + money(M.ent.reTotal) + ' is more than the ' + (M.ent.rate * 100) + '% limit (' + money(M.ent.cap) + '). ' + money(M.ent.disallowed) + ' was disallowed as a deduction.');
     if (M.method === 'osd' || M.method === 'eight') warn.push('info:' + (M.method === 'osd' ? 'OSD' : 'The 8% option') + ' is selected, so the expenses below are for reference only. They do not reduce the tax due.');
-    if (R.auto) warn.push('info:Expenses were estimated at ' + R.auto.percent + '% of revenue (' + money(R.auto.target) + ')' + (R.auto.rationale ? '. ' + R.auto.rationale : '.') + ' Keep supporting documents for every deduction you claim.');
+    if (R.auto) warn.push('info:No expense documents were uploaded, so cost of sales and expenses are estimated from ' + (R.auto.basis === 'prior' ? 'the previous quarter\'s rates' : 'the rate you entered') + '.' + (R.auto.rationale ? ' ' + R.auto.rationale : '') + ' Keep supporting documents for every deduction you claim.');
 
     const kpi = (label, val, sub, hl) => '<div class="kpi' + (hl ? ' hl' : '') + '"><small>' + label + '</small><b data-count="' + val + '">' + money(animate ? 0 : val) + '</b>' + (sub ? '<em>' + sub + '</em>' : '') + '</div>';
 
@@ -1034,9 +1219,20 @@
       kpi('Revenue', M.revenue, 'Q' + M.quarter + ' ' + M.year) +
       kpi('Cost of sales', M.cos, plural(M.accounts.filter((a) => a.category === 'cost_of_sales').length, 'account')) +
       kpi('Operating expenses', M.opex, plural(M.accounts.filter((a) => a.category === 'operating_expense').length, 'account')) +
-      kpi(T.taxPayable < 0 ? 'Overpayment' : 'Tax payable', T.taxPayable, 'Tax due ' + money(T.taxDue), true) +
+      kpi('Tax still due', T.taxPayable, 'Tax due ' + money(T.taxDue) + ' · credits ' + money(T.totalCredits), true) +
       '</div>';
 
+    if (R.auto) {
+      const p = R.auto.prev;
+      const field = (key, label, val, was) => '<label class="est-in"><span>' + label + '</span><div class="pct-box"><input data-est="' + key + '" inputmode="decimal" value="' + val + '"' +
+        (was != null && Math.abs(val - was) >= 0.005 ? ' class="changed"' : '') + ' /> %</div><small>' + (was != null ? 'Previous quarter: ' + was + '%' : p ? 'Previous quarter: not itemized' : '&nbsp;') + '</small></label>';
+      h += '<div class="est-box"><div class="est-h"><b>Estimated cost of sales &amp; expenses — % of revenue</b><small>' +
+        (R.auto.basis === 'prior' ? 'Carried over from the ' + esc(p.label) + ' ITR. Keep or adjust the rates for this quarter.' : 'Set by you. Adjust the rates for this quarter as needed.') + '</small></div>' +
+        field('cosPct', 'Cost of sales', R.auto.cosPct, p ? p.cos : null) +
+        field('opexPct', 'Operating expenses · Total Allowable Itemized Deductions', R.auto.opexPct, p ? p.opex : null) +
+        '<div class="est-in"><span>Total</span><b style="font-family:var(--mono);font-size:15px;line-height:38px">' + r2(R.auto.cosPct + R.auto.opexPct) + '% · ' + money(M.cos + M.opex) + '</b><small>&nbsp;</small></div>' +
+        (p && p.opex != null ? '<button type="button" class="btn btn-outline" data-est-reset>Use previous quarter rates</button>' : '') + '</div>';
+    }
     if (warn.length) h += '<div class="alerts">' + warn.map((w) => w.startsWith('info:') ? '<div class="alert info">' + esc(w.slice(5)) + '</div>' : '<div class="alert">' + esc(w) + '</div>').join('') + '</div>';
 
     // ---- Income statement
@@ -1058,9 +1254,9 @@
     is += acctRows('cost_of_sales') || '<tr class="muted"><td class="ind" colspan="2">None</td></tr>';
     is += '<tr class="tot"><td>Total cost of sales</td><td class="amt">' + money(M.cos) + '</td></tr>';
     is += '<tr class="sub"><td>Gross profit</td><td class="amt">' + money(M.grossProfit) + '</td></tr>';
-    is += '<tr class="sec"><td colspan="2">Operating expenses</td></tr>';
+    is += '<tr class="sec"><td colspan="2">Operating expenses (Total Allowable Itemized Deductions)</td></tr>';
     is += acctRows('operating_expense') || '<tr class="muted"><td class="ind" colspan="2">None</td></tr>';
-    is += '<tr class="tot"><td>Total operating expenses</td><td class="amt">' + money(M.opex) + '</td></tr>';
+    is += '<tr class="tot"><td>Total Allowable Itemized Deductions</td><td class="amt">' + money(M.opex) + '</td></tr>';
     if (M.ent.disallowed > 0 && M.method === 'itemized') is += '<tr class="muted"><td class="ind">Less: Entertainment over limit (non-deductible)</td><td class="amt">(' + money(M.ent.disallowed) + ')</td></tr><tr class="sub"><td>Allowable operating expenses</td><td class="amt">' + money(M.deductibleOpex) + '</td></tr>';
     if (M.nonded) {
       is += '<tr class="sec"><td colspan="2">Non-deductible (excluded from tax)</td></tr>' + acctRows('non_deductible');
@@ -1079,17 +1275,25 @@
     });
     tx += '<tr class="sec"><td colspan="2">Less: Tax credits / payments</td></tr>';
     T.credits.forEach((c) => {
-      const key = c.key === 'cwtThisQ' || c.key === 'otherCredits' ? 'r:' + c.key : 'p:' + c.key;
-      tx += '<tr><td class="ind">' + esc(c.label) + '</td><td class="amt">' + inp(key, c.amount, false) + '</td></tr>';
+      const key = ['cwtThisQ', 'otherCredits', 'excessMcit'].includes(c.key) ? 'r:' + c.key : 'p:' + c.key;
+      let extra = c.note ? '<span class="note">' + esc(c.note) + '</span>' : '';
+      if (c.key === 'cwtThisQ') {
+        const opts = [['none', 'None'], ['upload', 'Uploaded 2307 (' + money(R.cwtUploaded) + ')'], ['manual', 'Manual amount'], ['auto|Goods', 'Auto 1% of revenue (goods)'], ['auto|Services', 'Auto 2% of revenue (services)']]
+          .filter(([v]) => v !== 'upload' || R.certs.length);
+        const cur = S.cwt.mode === 'auto' ? 'auto|' + S.cwt.kind : S.cwt.mode;
+        extra += '<select class="cwt-switch" data-cwtswitch aria-label="CWT method">' + opts.map(([v, l]) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>';
+      }
+      tx += '<tr><td class="ind">' + esc(c.label) + extra + '</td><td class="amt">' + inp(key, c.amount, c.key === 'cwtThisQ' && R.cwtEdited) + '</td></tr>';
     });
     tx += '<tr class="tot"><td>Total tax credits / payments</td><td class="amt">' + money(T.totalCredits) + '</td></tr>';
-    tx += '<tr class="grand"><td>' + (T.taxPayable < 0 ? 'Overpayment' : 'Tax payable') + '</td><td class="amt">' + money(T.taxPayable) + '</td></tr>';
+    tx += '<tr class="grand"><td>Tax Still Due</td><td class="amt">' + money(T.taxPayable) + '</td></tr>';
+    if (T.excessCredits > 0) tx += '<tr class="muted"><td class="ind">Excess credits carried over</td><td class="amt">' + money(T.excessCredits) + '</td></tr>';
 
     // ---- Documents
     const docRows = R.docs.map((d) => {
       const conf = d.data.confidence ? '<span class="conf ' + esc(d.data.confidence) + '">' + esc(d.data.confidence) + '</span>' : '';
-      const t = { sales_vat: '2550Q', sales_nonvat: '2551Q', prior_itr: 'Prior ' + S.form, expenses: 'Expenses' }[d.type];
-      const val = d.type === 'expenses' ? d.data.items.length + ' items · ' + money(d.data.document_total)
+      const t = { sales_vat: '2550Q', sales_nonvat: '2551Q', prior_itr: 'Prior ' + S.form, expenses: 'Expenses', form_2307: 'BIR 2307' }[d.type];
+      const val = d.type === 'form_2307' ? d.data.certificates.length + ' cert. · ' + money(d.data.total_tax_withheld) : d.type === 'expenses' ? d.data.items.length + ' items · ' + money(d.data.document_total)
         : d.type === 'prior_itr' ? 'Tax due ' + money(d.data.tax_due) : money(d.data.revenue);
       return '<tr><td><b>' + esc(t) + '</b> · ' + esc(d.file) + conf + (d.data.notes ? '<span class="note">' + esc(d.data.notes) + '</span>' : '') +
         (d.url ? '<span class="note"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Open archived copy</a></span>' : '') + '</td><td class="amt">' + val + '</td></tr>';
@@ -1098,6 +1302,10 @@
     h += '<div class="res-grid">' +
       '<div class="panel"><div class="panel-h"><h4>Income statement</h4><small>' + (R.expenseSource === 'auto' ? '<span class="badge-src">Auto-generated expenses</span>' : 'Tap an account to see its items') + '</small></div><div class="scroll-x"><table class="tbl">' + is + '</table></div></div>' +
       '<div><div class="panel"><div class="panel-h"><h4>Tax computation · BIR Form ' + M.form + '</h4><small>' + esc(M.methodLabel) + '</small></div><div class="scroll-x"><table class="tbl">' + tx + '</table></div></div>' +
+      (R.certs.length ? '<div class="panel"><div class="panel-h"><h4>BIR 2307 — Creditable tax withheld</h4><small>' + R.certs.length + ' certificate' + (R.certs.length === 1 ? '' : 's') + '</small></div><div class="scroll-x"><table class="tbl">' +
+        R.certs.map((c) => '<tr><td><b>' + esc(c.payor_name || 'Unknown payor') + '</b><span class="note">TIN ' + esc(c.payor_tin || '—') + ' · ' + esc([c.period_from, c.period_to].filter(Boolean).join(' – ') || ('Q' + c.quarter + ' ' + c.year)) +
+          ' · ' + esc(c.lines.map((l) => l.atc).filter(Boolean).join(', ')) + ' · income ' + money(c.total_income) + '</span></td><td class="amt">' + money(c.total_tax_withheld) + '</td></tr>').join('') +
+        '<tr class="tot"><td>Total CWT per 2307</td><td class="amt">' + money(R.cwtUploaded) + '</td></tr></table></div></div>' : '') +
       '<div class="panel"><div class="panel-h"><h4>Source documents</h4><small>Read by Muse Spark</small></div><div class="scroll-x"><table class="tbl">' + docRows + '</table></div></div></div>' +
       '</div>';
 
@@ -1123,15 +1331,44 @@
     if (t && !e.target.closest('input')) { const k = t.dataset.toggle; S.R.open[k] = !S.R.open[k]; renderResults(); }
   });
   $('#results').addEventListener('focusin', (e) => { if (e.target.matches('.num-input')) setTimeout(() => e.target.select(), 0); });
-  $('#results').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.num-input')) e.target.blur(); });
+  $('#results').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.num-input, [data-est]')) e.target.blur(); });
+  $('#results').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-est-reset]')) return;
+    const p = S.R.auto.prev; S.R.auto.cosPct = p.cos; S.R.auto.opexPct = p.opex; S.R.auto.basis = 'prior';
+    clearAutoOverrides(); renderResults();
+  });
+  function clearAutoOverrides() {
+    Object.keys(S.R.overrides).forEach((k) => { if (S.R.items.some((i) => i.auto && (i.category + '|' + normAcct(i.account)) === k)) delete S.R.overrides[k]; });
+  }
   $('#results').addEventListener('change', (e) => {
-    const el = e.target; if (!el.matches('.num-input')) return;
+    const el = e.target;
+    if (el.matches('[data-est]')) {
+      const v = Math.max(0, parseNum(el.value));
+      const other = el.dataset.est === 'cosPct' ? S.R.auto.opexPct : S.R.auto.cosPct;
+      if (v + other > 100) { toast('Cost of sales and expenses cannot exceed 100% of revenue.', 'err'); renderResults(); return; }
+      S.R.auto[el.dataset.est] = r2(v);
+      clearAutoOverrides();
+      setTimeout(() => renderResults(), 0);
+      return;
+    }
+    if (el.matches('[data-cwtswitch]')) {
+      const [m, k] = el.value.split('|');
+      S.cwt.mode = m; if (k) S.cwt.kind = k;
+      applyCwtMode(); renderCwt(); renderResults();
+      if (m === 'manual' && !S.cwt.manual) setTimeout(() => { const i = $('[data-edit="r:cwtThisQ"]'); if (i) i.focus(); }, 0);
+      return;
+    }
+    if (!el.matches('.num-input')) return;
     const v = parseNum(el.value);
     const [ns, key] = [el.dataset.edit.slice(0, 1), el.dataset.edit.slice(2)];
     if (ns === 'a') {
       const base = accounts(Object.assign({}, S.R, { overrides: {} })).find((a) => a.key === key);
       if (base && r2(base.amount) === v) delete S.R.overrides[key]; else S.R.overrides[key] = v;
     } else if (ns === 'p') S.R.prior[key] = v;
+    else if (ns === 'r' && key === 'cwtThisQ') {
+      if (S.cwt.mode === 'manual') { S.cwt.manual = v; S.R.cwtThisQ = v; $('#cwtManual').value = v ? plain(v) : ''; }
+      else { S.R.cwtThisQ = v; S.R.cwtEdited = true; }
+    }
     else if (ns === 'r') S.R[key] = v;
     setTimeout(() => renderResults(), 0);
   });
@@ -1151,7 +1388,7 @@
         report: {
           form: M.form, year: M.year, quarter: M.quarter, method: M.methodLabel, revenue: M.revenue, costOfSales: M.cos,
           opex: M.deductibleOpex, taxableToDate: M.tax.taxableToDate, taxDue: M.tax.taxDue, credits: M.tax.totalCredits,
-          taxPayable: M.tax.taxPayable, expenseSource: S.R.expenseSource === 'auto' ? 'Auto ' + S.R.auto.percent + '%' : 'Documents'
+          taxPayable: M.tax.taxPayable, expenseSource: S.R.expenseSource === 'auto' ? 'Estimated: COS ' + S.R.auto.cosPct + '% + OpEx ' + S.R.auto.opexPct + '% (' + (S.R.auto.basis === 'prior' ? 'prior-quarter rates' : 'user rate') + ')' : 'Documents'
         }
       }).catch(() => {});
     } catch (e) {

@@ -6,7 +6,8 @@
  */
 window.ITR_CONFIG = {
   API_URL: 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE',
-  MAX_YEARS_BACK: 6,
+  FIRST_YEAR: 2026,      // earliest taxable year offered
+  YEARS_AHEAD: 4,        // list runs to at least current year + this many
   PARALLEL_UPLOADS: 3,
   IMAGE_MAX_DIMENSION: 2000,
   IMAGE_QUALITY: 0.85
