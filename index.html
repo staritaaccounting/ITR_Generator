@@ -261,6 +261,39 @@
             <ul class="files" data-list="prior"></ul>
           </div>
 
+          <div class="upl upl-cwt" id="uplCwt">
+            <div class="upl-h">
+              <div><b>Creditable Withholding Tax — BIR 2307</b><small>Choose how to set this quarter's CWT credit</small></div>
+              <span class="opt">Credit</span>
+            </div>
+            <div class="seg seg-4" id="cwtMode" role="radiogroup" aria-label="CWT method">
+              <button type="button" role="radio" data-v="none">None<small>No 2307</small></button>
+              <button type="button" role="radio" data-v="upload">Upload 2307<small>Muse Spark reads it</small></button>
+              <button type="button" role="radio" data-v="manual">Enter amount<small>Computed manually</small></button>
+              <button type="button" role="radio" data-v="auto">Auto-compute<small>1% goods · 2% services</small></button>
+            </div>
+            <div class="cwt-pane" data-cwt="upload" hidden>
+              <label class="drop" data-target="cwt">
+                <input type="file" multiple accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv" />
+                <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Drop 2307 certificates or <u>browse</u> (several allowed)</span>
+              </label>
+              <ul class="files" data-list="cwt"></ul>
+            </div>
+            <div class="cwt-pane" data-cwt="manual" hidden>
+              <label class="field cwt-amt"><span>CWT for this quarter</span>
+                <div class="peso-in"><i>₱</i><input id="cwtManual" inputmode="decimal" placeholder="0.00" /></div>
+              </label>
+            </div>
+            <div class="cwt-pane" data-cwt="auto" hidden>
+              <div class="seg seg-2" id="cwtKind" role="radiogroup" aria-label="Withholding rate">
+                <button type="button" role="radio" data-v="Goods">1% · Goods<small>Purchase of goods</small></button>
+                <button type="button" role="radio" data-v="Services">2% · Services<small>Purchase of services</small></button>
+              </div>
+              <p class="hint">CWT = total revenue for the quarter × the selected rate. It updates automatically after Muse Spark reads the sales return.</p>
+            </div>
+          </div>
+
           <div class="upl upl-exp" id="uplExpenses">
             <div class="upl-h">
               <div><b>Expenses</b><small>Receipts, invoices, ledgers or spreadsheets. Any layout works.</small></div>
