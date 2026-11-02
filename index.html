@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ITR Generator — Sta. Rita Accounting Office</title>
+  <meta name="description" content="Generate BIR Form 1701Q and 1702Q computations from 2550Q/2551Q returns and expense documents, powered by Muse Spark." />
+  <meta name="theme-color" content="#d4e7fb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="ITR Generator" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- ============ INTRO ANIMATION ============ -->
+  <div id="intro" class="intro" aria-hidden="true">
+    <div class="intro-bg"></div>
+    <div class="intro-stack">
+      <div class="intro-logo-wrap">
+        <span class="intro-ring"></span>
+        <div class="logo-circle intro-mark"><img src="icons/logo.png" alt="" width="291" height="288" /></div>
+      </div>
+      <div class="intro-title">ITR Generator</div>
+      <div class="intro-sub">BIR 1701Q · 1702Q · Fast · Accurate · Hassle-Free</div>
+      <div class="intro-bar"><i></i></div>
+    </div>
+  </div>
+
+  <!-- ============ INSTALL BANNER ============ -->
+  <div id="installBanner" class="install-banner" role="dialog" aria-label="Install app" hidden>
+    <img src="icons/icon-192.png" alt="" width="48" height="48" />
+    <div class="ib-text">
+      <strong>Install ITR Generator</strong>
+      <span id="installHint">Add it to your home screen for a faster, full-screen experience.</span>
+    </div>
+    <div class="ib-actions">
+      <button class="btn btn-ghost-light" id="installLater">Not now</button>
+      <button class="btn btn-gold" id="installNow">Install</button>
+    </div>
+  </div>
+
+  <!-- ============ LANDING ============ -->
+  <section id="landingView" class="landing" hidden>
+    <div class="ld-bg" aria-hidden="true">
+      <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
+      <svg class="ld-chart left" viewBox="0 0 420 320" preserveAspectRatio="none">
+        <polyline points="0,250 40,190 110,230 170,150 230,200 270,280 330,180 420,120" />
+        <g><circle cx="40" cy="190" r="6"/><circle cx="110" cy="230" r="6"/><circle cx="170" cy="150" r="6"/><circle cx="230" cy="200" r="6"/><circle cx="270" cy="280" r="6"/><circle cx="330" cy="180" r="6"/></g>
+      </svg>
+      <svg class="ld-chart right" viewBox="0 0 420 320" preserveAspectRatio="none">
+        <polyline points="0,220 60,260 140,120 210,170 260,150 330,90 380,250 420,230" />
+        <g><circle cx="60" cy="260" r="6"/><circle cx="140" cy="120" r="6"/><circle cx="210" cy="170" r="6"/><circle cx="330" cy="90" r="6"/><circle cx="380" cy="250" r="6"/></g>
+      </svg>
+      <svg class="ld-doc d1" viewBox="0 0 60 76"><path d="M4 2h36l16 16v54a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M12 30h34M12 40h34M12 50h24"/></svg>
+      <svg class="ld-doc d2" viewBox="0 0 60 76"><path d="M4 2h36l16 16v54a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M12 30h34M12 40h34M12 50h24"/></svg>
+      <svg class="ld-doc d3" viewBox="0 0 60 76"><path d="M4 2h36l16 16v54a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M12 30h34M12 40h34M12 50h24"/></svg>
+    </div>
+
+    <div class="ld-topbar">
+      <span class="ld-hello" id="ldHello" hidden></span>
+      <button class="ld-signin" id="ldSigninBtn" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Sign in</span>
+      </button>
+    </div>
+
+    <div class="ld-inner">
+      <div class="ld-hero">
+        <div class="logo-circle ld-logo"><img src="icons/logo.png" alt="Sta. Rita Accounting Office" width="291" height="288" /></div>
+        <h1 class="ld-title">ITR Generator</h1>
+        <p class="ld-sub">Powered by Sta. Rita Accounting Office</p>
+        <ul class="ld-badges">
+          <li><svg width="30" height="34" viewBox="0 0 24 28"><path d="M14 1L3 16h8l-2 11 11-15h-8z" fill="#1565c0"/></svg>Fast</li>
+          <li><svg width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#c9a43c"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Accurate</li>
+          <li><svg width="28" height="32" viewBox="0 0 24 28"><path d="M12 1l10 4v8c0 7-4.5 11.5-10 14C6.5 24.5 2 20 2 13V5z" fill="#1565c0"/><path d="M12 4l7 2.8V13c0 5.2-3.2 8.8-7 10.8z" fill="#fff" opacity=".85"/></svg>Hassle-Free</li>
+        </ul>
+        <p class="ld-tagline desk">Safe • Reliable • Trusted by Filipino Professionals</p>
+      </div>
+
+      <div class="ld-phone">
+        <form class="ld-form" id="ldForm" novalidate>
+          <h2>Generate Your ITR</h2>
+          <label class="ld-field">
+            <span>Tax Year:</span>
+            <select id="ldYear" aria-label="Tax year"></select>
+            <svg class="caret" width="14" height="10" viewBox="0 0 14 10"><path d="M1 1l6 7 6-7z" fill="#1565c0"/></svg>
+          </label>
+          <label class="ld-field">
+            <span>BIR Form:</span>
+            <select id="ldFormSel" aria-label="BIR Form">
+              <option value="1701Q">1701Q — Individuals</option>
+              <option value="1702Q">1702Q — Corporations</option>
+            </select>
+            <svg class="caret" width="14" height="10" viewBox="0 0 14 10"><path d="M1 1l6 7 6-7z" fill="#1565c0"/></svg>
+          </label>
+          <div class="ld-field ld-vat">
+            <span>VAT Status:</span>
+            <div class="ld-seg" id="ldVat" role="radiogroup" aria-label="VAT status">
+              <button type="button" role="radio" data-v="VAT"><b>VAT</b><small>2550Q</small></button>
+              <button type="button" role="radio" data-v="Non-VAT"><b>Non-VAT</b><small>2551Q</small></button>
+              <i class="ld-seg-thumb" aria-hidden="true"></i>
+            </div>
+          </div>
+          <button class="ld-cta" id="ldGenerate" type="submit">Generate ITR Now</button>
+        </form>
+        <div class="ld-feats">
+          <div>
+            <svg width="44" height="54" viewBox="0 0 44 54"><path d="M6 2h22l14 14v32a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4z" fill="none" stroke="#1565c0" stroke-width="3.5"/><path d="M28 2v14h14" fill="none" stroke="#1565c0" stroke-width="3.5"/><path d="M11 26h22M11 33h22M11 40h12M27 40h6" stroke="#1565c0" stroke-width="3.5" stroke-linecap="round"/></svg>
+            <span>Auto-Calculate Taxes</span>
+          </div>
+          <div>
+            <svg width="46" height="52" viewBox="0 0 24 28"><path d="M12 1l10 4v8c0 7-4.5 11.5-10 14C6.5 24.5 2 20 2 13V5z" fill="#1565c0"/><path d="M12 4l7 2.8V13c0 5.2-3.2 8.8-7 10.8z" fill="#fff" opacity=".85"/></svg>
+            <span>Secure &amp; Compliant</span>
+          </div>
+          <div>
+            <svg width="52" height="52" viewBox="0 0 52 52"><rect x="6" y="6" width="40" height="40" rx="6" fill="none" stroke="#1d7a46" stroke-width="3.5"/><path d="M15 17l10 18M25 17L15 35" stroke="#1d7a46" stroke-width="3.5" stroke-linecap="round"/><path d="M31 18v14m0 0l-5-5m5 5l5-5M29 38h10" fill="none" stroke="#1565c0" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Download Excel Instantly</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="ld-tagline mob">Safe • Reliable • Trusted by Filipino Professionals</p>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <section id="appView" class="app-view" hidden>
+    <header class="topbar">
+      <button class="tb-brand" id="homeBtn" type="button" title="Back to home">
+        <span class="logo-circle tb-logo"><img src="icons/logo-mark.png" alt="" width="30" height="33" /></span>
+        <div><b>ITR Generator</b><small>Sta. Rita Accounting Office</small></div>
+      </button>
+      <div class="tb-user">
+        <button class="avatar-btn" id="userMenuBtn" aria-haspopup="true" aria-expanded="false">
+          <span class="avatar" id="userAvatar">A</span>
+          <span class="u-name" id="userName">User</span>
+          <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </button>
+        <div class="menu" id="userMenu" hidden>
+          <button id="menuHome">Home</button>
+          <button id="menuInstall" hidden>Install app</button>
+          <button id="menuPassword">Change password</button>
+          <button id="menuSettings">Backend settings</button>
+          <button id="menuLogout" class="danger">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="page-head">
+        <div>
+          <h1>Generate a quarterly ITR</h1>
+          <p class="muted">Choose a client, the period and the form, then upload the documents.</p>
+        </div>
+        <ol class="stepper" id="stepper">
+          <li data-s="1" class="active"><i>1</i><span>Taxpayer</span></li>
+          <li data-s="2"><i>2</i><span>Period &amp; form</span></li>
+          <li data-s="3"><i>3</i><span>Documents</span></li>
+          <li data-s="4"><i>4</i><span>Results</span></li>
+        </ol>
+      </div>
+
+      <!-- STEP 1 -->
+      <section class="card step" id="step1">
+        <div class="card-h"><span class="num">1</span><h2>Taxpayer</h2></div>
+        <div class="combo" id="clientCombo">
+          <label class="field">
+            <span>Assigned client</span>
+            <div class="combo-input">
+              <svg class="ico" width="18" height="18" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <input id="clientInput" role="combobox" aria-expanded="false" aria-controls="clientList" aria-autocomplete="list" placeholder="Type a name or TIN…" autocomplete="off" />
+              <button type="button" class="combo-clear" id="clientClear" aria-label="Clear" hidden>&times;</button>
+              <button type="button" class="combo-caret" id="clientCaret" aria-label="Show all clients">
+                <svg width="16" height="16" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+          </label>
+          <ul class="combo-list" id="clientList" role="listbox" hidden></ul>
+        </div>
+        <div class="client-card" id="clientCard" hidden></div>
+      </section>
+
+      <!-- STEP 2 -->
+      <section class="card step locked" id="step2">
+        <div class="card-h"><span class="num">2</span><h2>Period &amp; form</h2></div>
+        <div class="grid-2">
+          <div class="field">
+            <span>Taxable year</span>
+            <div class="year-picker">
+              <button type="button" class="yp-btn" id="yearPrev" aria-label="Previous year">‹</button>
+              <select id="yearSelect" aria-label="Taxable year"></select>
+              <button type="button" class="yp-btn" id="yearNext" aria-label="Next year">›</button>
+            </div>
+          </div>
+          <div class="field">
+            <span>Quarter</span>
+            <div class="seg" id="quarterSeg" role="radiogroup">
+              <button type="button" role="radio" data-v="1">Q1<small>Jan–Mar</small></button>
+              <button type="button" role="radio" data-v="2">Q2<small>Apr–Jun</small></button>
+              <button type="button" role="radio" data-v="3">Q3<small>Jul–Sep</small></button>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <span>Form to generate</span>
+          <div class="form-pick" id="formPick">
+            <button type="button" data-v="1701Q">
+              <b>BIR Form 1701Q</b>
+              <small>Individuals, estates &amp; trusts — self-employed / professionals</small>
+            </button>
+            <button type="button" data-v="1702Q">
+              <b>BIR Form 1702Q</b>
+              <small>Corporations &amp; partnerships</small>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <span>VAT status</span>
+          <div class="seg seg-2" id="vatSeg" role="radiogroup" aria-label="VAT status">
+            <button type="button" role="radio" data-v="VAT">VAT<small>Sales from 2550Q</small></button>
+            <button type="button" role="radio" data-v="Non-VAT">Non-VAT<small>Sales from 2551Q</small></button>
+          </div>
+        </div>
+        <div class="options" id="taxOptions"></div>
+      </section>
+
+      <!-- STEP 3 -->
+      <section class="card step locked" id="step3">
+        <div class="card-h"><span class="num">3</span><h2>Documents</h2></div>
+        <div class="uploads">
+          <div class="upl" id="uplSales">
+            <div class="upl-h">
+              <div><b id="salesTitle">Sales return — 2550Q</b><small id="salesSub">VAT return for the quarter (photo, PDF or Excel)</small></div>
+              <span class="req">Required</span>
+            </div>
+            <label class="drop" data-target="sales">
+              <input type="file" multiple accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv" />
+              <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Drop files or <u>browse</u></span>
+            </label>
+            <ul class="files" data-list="sales"></ul>
+          </div>
+
+          <div class="upl" id="uplPrior">
+            <div class="upl-h">
+              <div><b id="priorTitle">Previous quarter ITR</b><small id="priorSub">1701Q / 1702Q filed for the previous quarter</small></div>
+              <span class="opt" id="priorBadge">Recommended</span>
+            </div>
+            <label class="drop" data-target="prior">
+              <input type="file" accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv" />
+              <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Drop file or <u>browse</u></span>
+            </label>
+            <ul class="files" data-list="prior"></ul>
+          </div>
+
+          <div class="upl upl-exp" id="uplExpenses">
+            <div class="upl-h">
+              <div><b>Expenses</b><small>Receipts, invoices, ledgers or spreadsheets. Any layout works.</small></div>
+              <span class="opt">Optional</span>
+            </div>
+            <div class="exp-actions">
+              <label class="btn btn-gold btn-upload">
+                <input type="file" multiple accept="image/*,application/pdf,.pdf,.xlsx,.xls,.csv" data-target="expenses" />
+                <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+                Upload expenses
+              </label>
+              <label class="btn btn-outline btn-upload cam-only">
+                <input type="file" accept="image/*" capture="environment" data-target="expenses" />
+                <svg width="18" height="18" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                Take photo
+              </label>
+            </div>
+            <ul class="files" data-list="expenses"></ul>
+            <p class="hint" id="expHint">No expense files? Muse Spark will estimate expenses as a percentage of revenue. You'll set the percentage before it runs.</p>
+          </div>
+        </div>
+        <div class="step-foot">
+          <button class="btn btn-primary btn-lg" id="analyzeBtn" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2l2.4 6.9L21 11l-6.6 2.1L12 20l-2.4-6.9L3 11l6.6-2.1z" fill="currentColor"/></svg>
+            Analyze with Muse Spark
+          </button>
+        </div>
+      </section>
+
+      <!-- STEP 4 -->
+      <section class="card step" id="step4" hidden>
+        <div class="card-h">
+          <span class="num">4</span><h2 id="resultTitle">Results</h2>
+          <div class="card-actions">
+            <button class="btn btn-outline" id="newBtn">New computation</button>
+            <button class="btn btn-primary" id="downloadBtn">
+              <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download Excel
+            </button>
+          </div>
+        </div>
+        <div id="results"></div>
+      </section>
+    </main>
+    <footer class="foot">The tax is computed by formula from the extracted figures. Check every amount before you file. Not a substitute for professional review.</footer>
+  </section>
+
+  <!-- ============ MODALS ============ -->
+  <div class="modal" id="expenseModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="emTitle">
+      <div class="m-icon">%</div>
+      <h3 id="emTitle">No expenses provided</h3>
+      <p>Muse Spark will estimate this client's expenses from its line of business. What percentage of revenue should be applied as expenses?</p>
+      <div class="pct-display"><input id="pctNumber" type="number" min="1" max="100" step="0.5" value="60" inputmode="decimal" /><span>%</span></div>
+      <input id="pctRange" type="range" min="1" max="100" step="0.5" value="60" />
+      <div class="chips" id="pctChips">
+        <button data-p="40">40%</button><button data-p="50">50%</button><button data-p="60">60%</button><button data-p="70">70%</button><button data-p="80">80%</button>
+      </div>
+      <p class="hint" id="pctPreview"></p>
+      <div class="m-actions">
+        <button class="btn btn-outline" data-close>Cancel</button>
+        <button class="btn btn-primary" id="pctConfirm">Apply &amp; analyze</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="progressModal" hidden>
+    <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="pmTitle">
+      <div class="spark-orb" aria-hidden="true"><i></i><i></i><i></i></div>
+      <h3 id="pmTitle">Muse Spark is reading your documents</h3>
+      <p class="muted" id="pmSub">Extracting figures, classifying expenses and computing tax…</p>
+      <ul class="prog-list" id="progList"></ul>
+      <div class="m-actions"><button class="btn btn-outline" id="pmClose" hidden>Close</button></div>
+    </div>
+  </div>
+
+  <div class="modal" id="signinModal" hidden>
+    <form id="loginForm" class="modal-card signin-card" role="dialog" aria-modal="true" aria-labelledby="siTitle" autocomplete="on">
+      <button type="button" class="m-x" data-close aria-label="Close">&times;</button>
+      <div class="logo-circle si-logo"><img src="icons/logo.png" alt="Sta. Rita Accounting Office" width="120" height="119" /></div>
+      <h3 id="siTitle">Sign in to continue</h3>
+      <p class="muted si-sub">Use the account given to you by Sta. Rita Accounting Office.</p>
+      <div class="si-chips" id="siChips"></div>
+      <label class="field">
+        <span>Username</span>
+        <input id="loginUser" name="username" autocomplete="username" required autocapitalize="none" spellcheck="false" />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <div class="pw-wrap">
+          <input id="loginPass" name="password" type="password" autocomplete="current-password" required />
+          <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">Show</button>
+        </div>
+      </label>
+      <div id="loginError" class="form-error" role="alert"></div>
+      <button class="btn btn-blue btn-block btn-lg" id="loginBtn" type="submit"><span>Sign in &amp; generate</span></button>
+      <p class="si-switch">New staff? <button type="button" class="link-strong" id="toSignup">Create an account</button></p>
+      <button type="button" class="link-btn" id="openSettings">Backend settings</button>
+    </form>
+  </div>
+
+  <div class="modal" id="signupModal" hidden>
+    <form id="signupForm" class="modal-card signin-card" role="dialog" aria-modal="true" aria-labelledby="suTitle" autocomplete="off" novalidate>
+      <button type="button" class="m-x" data-close aria-label="Close">&times;</button>
+      <div class="logo-circle si-logo sm"><img src="icons/logo.png" alt="Sta. Rita Accounting Office" width="120" height="119" /></div>
+      <h3 id="suTitle">Create your account</h3>
+      <p class="muted si-sub">Choose your name from the assigned staff list. It becomes your username, and you'll see only the clients assigned to you.</p>
+      <label class="field">
+        <span>Assigned staff (your username)</span>
+        <div class="sel-wrap">
+          <select id="suStaff" required><option value="">Loading staff…</option></select>
+        </div>
+        <small class="field-hint" id="suStaffHint"></small>
+      </label>
+      <label class="field">
+        <span>Full name</span>
+        <input id="suName" autocomplete="name" placeholder="e.g. Lyra Santos" required />
+      </label>
+      <div class="grid-pw">
+        <label class="field">
+          <span>Password</span>
+          <input id="suPass" type="password" autocomplete="new-password" minlength="8" required />
+        </label>
+        <label class="field">
+          <span>Confirm password</span>
+          <input id="suPass2" type="password" autocomplete="new-password" minlength="8" required />
+        </label>
+      </div>
+      <div id="suError" class="form-error" role="alert"></div>
+      <button class="btn btn-blue btn-block btn-lg" id="suBtn" type="submit"><span>Create account &amp; continue</span></button>
+      <p class="si-switch">Already enrolled? <button type="button" class="link-strong" id="toSignin">Sign in</button></p>
+    </form>
+  </div>
+
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="smTitle">
+      <h3 id="smTitle">Backend settings</h3>
+      <p class="muted">Paste the Google Apps Script Web App URL (ends with <code>/exec</code>).</p>
+      <label class="field"><span>Web App URL</span><input id="apiUrlInput" placeholder="https://script.google.com/macros/s/…/exec" /></label>
+      <div id="settingsMsg" class="form-note"></div>
+      <div class="m-actions">
+        <button class="btn btn-outline" data-close>Cancel</button>
+        <button class="btn btn-outline" id="testApi">Test</button>
+        <button class="btn btn-primary" id="saveApi">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="passwordModal" hidden>
+    <form class="modal-card" id="passwordForm" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+      <h3 id="pwTitle">Change password</h3>
+      <p class="muted" id="pwNote"></p>
+      <label class="field"><span>Current password</span><input type="password" id="pwOld" autocomplete="current-password" required /></label>
+      <label class="field"><span>New password (min. 8 characters)</span><input type="password" id="pwNew" autocomplete="new-password" minlength="8" required /></label>
+      <div id="pwMsg" class="form-error"></div>
+      <div class="m-actions">
+        <button type="button" class="btn btn-outline" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Update</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/tax.js"></script>
+  <script src="js/excel.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
