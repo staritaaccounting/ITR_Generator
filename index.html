@@ -346,11 +346,35 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="emTitle">
       <div class="m-icon">%</div>
       <h3 id="emTitle">No expenses provided</h3>
-      <p>Muse Spark will estimate this client's expenses from its line of business. What percentage of revenue should be applied as expenses?</p>
-      <div class="pct-display"><input id="pctNumber" type="number" min="1" max="100" step="0.5" value="60" inputmode="decimal" /><span>%</span></div>
-      <input id="pctRange" type="range" min="1" max="100" step="0.5" value="60" />
-      <div class="chips" id="pctChips">
-        <button data-p="40">40%</button><button data-p="50">50%</button><button data-p="60">60%</button><button data-p="70">70%</button><button data-p="80">80%</button>
+      <p id="emIntro">Muse Spark will estimate this client's expenses from its line of business. What percentage of revenue should be applied as expenses?</p>
+
+      <!-- Split mode: rates carried over from the previous quarter's ITR -->
+      <div id="pctSplit" hidden>
+        <div class="split-grid">
+          <label class="pct-field">
+            <span>Cost of sales</span>
+            <div class="pct-in"><input id="pctCos" type="number" min="0" max="100" step="0.01" inputmode="decimal" /><i>%</i></div>
+            <small id="pctCosPrev"></small>
+            <b id="pctCosAmt"></b>
+          </label>
+          <label class="pct-field">
+            <span>Operating expenses <em class="sub-lbl">Total Allowable Itemized Deductions</em></span>
+            <div class="pct-in"><input id="pctOpex" type="number" min="0" max="100" step="0.01" inputmode="decimal" /><i>%</i></div>
+            <small id="pctOpexPrev"></small>
+            <b id="pctOpexAmt"></b>
+          </label>
+        </div>
+        <div class="split-total"><span>Total expenses</span><b id="pctSplitTotal"></b></div>
+        <button type="button" class="link-btn" id="pctResetPrev">Reset to previous quarter rates</button>
+      </div>
+
+      <!-- Total mode: one rate, Muse Spark decides the mix -->
+      <div id="pctTotal">
+        <div class="pct-display"><input id="pctNumber" type="number" min="1" max="100" step="0.5" value="60" inputmode="decimal" /><span>%</span></div>
+        <input id="pctRange" type="range" min="1" max="100" step="0.5" value="60" />
+        <div class="chips" id="pctChips">
+          <button data-p="40">40%</button><button data-p="50">50%</button><button data-p="60">60%</button><button data-p="70">70%</button><button data-p="80">80%</button>
+        </div>
       </div>
       <p class="hint" id="pctPreview"></p>
       <div class="m-actions">

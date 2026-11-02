@@ -1,5 +1,5 @@
 /* ITR Generator service worker: caches the app shell for fast, installable loads. */
-const VERSION = 'itr-v1.3.0';
+const VERSION = 'itr-v1.4.0';
 const SHELL = [
   './', './index.html', './css/styles.css',
   './js/config.js', './js/tax.js', './js/excel.js', './js/app.js',
