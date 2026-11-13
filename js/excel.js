@@ -137,6 +137,16 @@
     wb.created = new Date();
     buildComputation(wb, M);
 
+    if (M.quarters) {
+      const Q = M.quarters, vat = M.R.expenseSource === 'vat2550';
+      const H = ['Quarter', 'Source', 'Revenue', 'Cost of sales', 'Operating expenses'].concat(vat ? ['With input tax (2550Q)', 'Without input tax'] : [], ['Net income']);
+      const rows = Q.rows.map((r) => ['Q' + r.q + ' ' + M.year + (r.current ? ' (this return)' : ''), (r.files || []).join(', '), r.revenue, r.cos, r.opex].concat(vat ? [r.withInput, r.nonInput] : [], [r.net]));
+      Q.missing.forEach((q) => rows.unshift(['Q' + q + ' ' + M.year, 'No return uploaded', 0, 0, 0].concat(vat ? [0, 0] : [], [0])));
+      const T = Q.total;
+      const num = vat ? [3, 4, 5, 6, 7, 8] : [3, 4, 5, 6];
+      table(wb, 'Quarters to Date', H, rows, [22, 40, 18, 18, 18, 20, 20, 18], num, ['TOTAL TO DATE', '', T.revenue, T.cos, T.opex].concat(vat ? [T.withInput, T.nonInput] : [], [T.net]));
+    }
+
     const sumRows = M.accounts.map((a) => [a.account, CAT[a.category], a.amount, a.items.length, a.edited ? 'Edited (extracted ' + a.extracted.toFixed(2) + ')' : '']);
     const total = M.accounts.reduce((s, a) => s + a.amount, 0);
     table(wb, 'Expense Summary', ['Account', 'Category', 'Amount', 'Items', 'Remarks'], sumRows, [44, 20, 18, 8, 32], [3], ['TOTAL', '', Math.round(total * 100) / 100, M.R.items.length, '']);

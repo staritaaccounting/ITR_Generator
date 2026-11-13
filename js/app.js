@@ -76,6 +76,7 @@
     salesType: 'VAT',
     preset: JSON.parse(localStorage.getItem('itr_landing') || 'null'),
     files: { sales: [], prior: [], expenses: [], cwt: [] },
+    nonInputPct: '',
     R: null, busy: false
   };
 
@@ -321,6 +322,63 @@
     }
   });
 
+  /* ---------- forgot username / password (office PIN, checked on the server) ---------- */
+  let rsPin = '';
+  function openReset() {
+    closeModal('#signinModal'); closeModal('#signupModal');
+    rsPin = '';
+    $('#resetForm').reset();
+    $('#rsStep1').hidden = false; $('#rsStep2').hidden = true;
+    $('#rsError').textContent = '';
+    $('#rsBtn span').textContent = 'Continue';
+    openModal('#resetModal');
+    setTimeout(() => $('#rsPin').focus(), 80);
+  }
+  $('#ldForgot').addEventListener('click', openReset);
+  $('#siForgot').addEventListener('click', openReset);
+  $('#rsToSignin').addEventListener('click', () => { closeModal('#resetModal'); openSignin(); });
+  $('#resetForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('#rsError'), btn = $('#rsBtn');
+    err.textContent = '';
+    if (!apiUrl()) { err.textContent = 'Backend is not set up yet. Open Backend settings first.'; return; }
+    btn.classList.add('loading');
+    try {
+      if ($('#rsStep2').hidden) {
+        const pin = $('#rsPin').value.trim();
+        if (!pin) { err.textContent = 'Enter the reset PIN.'; return; }
+        const d = await api('resetUsers', { pin });
+        if (!d.users.length) { err.textContent = 'No active users found.'; return; }
+        rsPin = pin;
+        $('#rsUser').innerHTML = d.users.map((u) => '<option value="' + esc(u.username) + '">' + esc(u.username) + (u.name && u.name !== u.username ? ' — ' + esc(u.name) : '') + (u.role === 'admin' ? ' (admin)' : '') + '</option>').join('');
+        const typed = ($('#loginUser').value || '').trim().toLowerCase();
+        const hit = d.users.find((u) => u.username.toLowerCase() === typed);
+        if (hit) $('#rsUser').value = hit.username;
+        $('#rsStep1').hidden = true; $('#rsStep2').hidden = false;
+        $('#rsBtn span').textContent = 'Reset password & sign in';
+        setTimeout(() => $('#rsPass').focus(), 50);
+      } else {
+        const username = $('#rsUser').value, p1 = $('#rsPass').value, p2 = $('#rsPass2').value;
+        if (p1.length < 8) { err.textContent = 'Password must be at least 8 characters.'; return; }
+        if (p1 !== p2) { err.textContent = 'Passwords do not match.'; return; }
+        const d = await api('resetPassword', { pin: rsPin, username, newPassword: p1 });
+        S.token = d.token; S.user = d.user;
+        localStorage.setItem(LS.token, d.token);
+        localStorage.setItem(LS.user, JSON.stringify(d.user));
+        rsPin = '';
+        $('#resetForm').reset();
+        closeModal('#resetModal');
+        if (!S.preset) saveLanding();
+        await enterApp();
+        toast('Password reset. Welcome, ' + d.user.name + '! Your username is ' + username + '.', 'ok', 6000);
+      }
+    } catch (ex) {
+      err.textContent = ex.message;
+    } finally {
+      btn.classList.remove('loading');
+    }
+  });
+
   /* ---------- sign-up ---------- */
   let staffCache = null;
   async function openSignup() {
@@ -498,6 +556,8 @@
         (c.forms ? '<div style="grid-column:1/-1"><small>Enrolled BIR forms</small><b class="forms">' + esc(c.forms) + '</b></div>' : '');
       $('#clientCard').hidden = false;
       S.opts.sellerOf = c.sellerOf || 'Goods';
+      S.nonInputPct = localStorage.getItem('itr_noninput_' + c.id) || '';
+      if ($('#nonInputPct')) $('#nonInputPct').value = S.nonInputPct;
       S.cwt.kind = c.sellerOf === 'Services' ? 'Services' : 'Goods';
       if (changed) {
         // BIR Form and VAT status come from the landing page selection; fall back to the client record
@@ -682,11 +742,24 @@
     if (S.R) { applyCwtMode(); renderResults(); }
   });
 
+  $('#nonInputPct').addEventListener('change', (e) => {
+    const v = e.target.value.trim() === '' ? '' : String(Math.min(100, Math.max(0, parseNum(e.target.value))));
+    S.nonInputPct = v; e.target.value = v;
+    if (S.client) localStorage.setItem('itr_noninput_' + S.client.id, v);
+  });
   function renderUploadLabels() {
     const vat = S.salesType === 'VAT';
-    $('#salesTitle').textContent = 'Sales return — ' + (vat ? '2550Q (VAT)' : '2551Q (Non-VAT)');
-    $('#salesSub').textContent = vat ? 'Quarterly VAT return for the quarter (photo, PDF or Excel)' : 'Quarterly percentage tax return for the quarter (photo, PDF or Excel)';
     const q = S.quarter;
+    const form = vat ? '2550Q' : '2551Q';
+    $('#salesTitle').textContent = 'Sales returns — ' + form + (q > 1 ? ' for Q1 to Q' + q + ' ' + S.year : (q ? ' for Q1 ' + S.year : '')) + (vat ? ' (VAT)' : ' (Non-VAT)');
+    $('#salesSub').textContent = q > 1
+      ? 'Upload one ' + form + ' per quarter — Q1' + (q > 2 ? ', Q2' : '') + ' and Q' + q + '. Muse Spark reads the quarter on each return and adds up the revenue' + (vat ? ' and the purchases (expenses with input tax)' : '') + '. Photo, PDF or Excel.'
+      : (vat ? 'Quarterly VAT return for the quarter — revenue and purchases with input tax (photo, PDF or Excel)' : 'Quarterly percentage tax return for the quarter (photo, PDF or Excel)');
+    $('#nonInputBox').hidden = !vat;
+    $('#expHint').textContent = vat
+      ? 'No expense files? Expenses with input tax are taken from the purchases on the 2550Q, plus the "expenses without input tax" % above.'
+      : 'No expense files? Muse Spark will estimate expenses as a percentage of revenue. You\'ll set the percentage before it runs.';
+    $('#nonInputPct').value = S.nonInputPct;
     const prior = $('#uplPrior');
     if (q === 1) {
       prior.classList.add('disabled');
@@ -882,6 +955,49 @@
     };
   }
 
+  /** Expense accounts from a quarter's 2550Q purchases (+ one line for expenses without input tax, sized in model()) */
+  function vatItems(Q) {
+    const goodsSeller = S.opts.sellerOf !== 'Services';
+    const out = [];
+    const add = (category, account, amount, description) => { if (amount > 0) out.push({ file: '2550Q Q' + Q.q + ' ' + S.year, vat2550: true, date: '', vendor: '', vat_amount: 0, category, account, amount: r2(amount), description, share: 1 }); };
+    add(goodsSeller ? 'cost_of_sales' : 'operating_expense', goodsSeller ? 'Purchases / Cost of Goods Sold' : 'Supplies and Materials', Q.purch.goods, 'Purchases of goods with input tax (2550Q)' + (Q.estimated ? ' — estimated as input tax ÷ 12%' : ''));
+    add('operating_expense', 'Purchases of Services (with input tax)', Q.purch.services, 'Purchases of services with input tax (2550Q)');
+    add(goodsSeller ? 'cost_of_sales' : 'operating_expense', goodsSeller ? 'Purchases without Input Tax' : 'Other Expenses without Input Tax', Q.purch.noInput, 'Domestic purchases with no input tax (2550Q)');
+    out.push({ file: 'Estimated', nonInput: true, date: '', vendor: '', vat_amount: 0, category: 'operating_expense', account: 'Salaries, Labor, Depreciation & Other Expenses without Input Tax', amount: 0, description: '', share: 1 });
+    return out;
+  }
+  /** Previous quarters from the uploaded returns: revenue, expenses and taxable income, using the same method as this quarter */
+  function prevFromReturns(R, cur) {
+    const list = R.quarters.filter((x) => x.q < S.quarter && x.uploaded);
+    if (!list.length) return null;
+    const vatMode = R.expenseSource === 'vat2550';
+    const pct = vatMode ? R.vatExp.pct : 0;
+    const curRev = cur.revenue || 0;
+    const rows = list.map((x) => {
+      let cos, opex, withInput = 0, nonInput = 0;
+      if (vatMode) {
+        const it = vatItems(x).filter((i) => !i.nonInput);
+        withInput = r2(it.reduce((t, i) => t + i.amount, 0));
+        nonInput = r2(x.revenue * pct / 100);
+        cos = r2(it.filter((i) => i.category === 'cost_of_sales').reduce((t, i) => t + i.amount, 0));
+        opex = r2(it.filter((i) => i.category === 'operating_expense').reduce((t, i) => t + i.amount, 0) + nonInput);
+      } else {
+        // same expense ratios as this quarter
+        cos = curRev ? r2(x.revenue * cur.cos / curRev) : 0;
+        opex = curRev ? r2(x.revenue * cur.opex / curRev) : 0;
+        nonInput = opex;
+      }
+      return { q: x.q, revenue: x.revenue, cos, opex, withInput, nonInput, files: x.files };
+    });
+    const tot = (k) => r2(rows.reduce((t, r) => t + r[k], 0));
+    const o = S.opts;
+    const t = window.ITRTax.compute({ form: S.form, year: S.year, quarter: 1, method: o.method, vatStatus: S.salesType, mixedIncome: o.mixedIncome, taxType: o.taxType, mcitBase: o.mcitBase, mcitExempt: o.mcitExempt, mcitRate: o.mcitRate,
+      revenue: tot('revenue'), otherIncome: 0, otherDeductions: 0, costOfSales: tot('cos'), opex: tot('opex'), prior: {}, cwtThisQ: 0, excessMcit: 0, otherCredits: 0 });
+    const ratio = vatMode ? 'expenses with input tax from the 2550Q + ' + pct + '% without input tax' : 'this quarter\'s expense ratios';
+    return { rows, revenue: tot('revenue'), cos: tot('cos'), opex: tot('opex'), taxable: r2(Math.max(0, t.taxableToDate)), basis: ratio,
+      grossIncome: o.mcitBase === 'sales' ? tot('revenue') : r2(tot('revenue') - tot('cos')) };
+  }
+
   /** Rescale estimated expense items so each category equals revenue × its rate */
   function rescaleAuto(R) {
     if (!R.auto) return;
@@ -939,7 +1055,7 @@
       .concat(S.files.expenses.map((x) => ({ x, docType: 'expenses', label: 'Expenses' })))
       .concat(S.cwt.mode === 'upload' ? S.files.cwt.map((x) => ({ x, docType: 'form_2307', label: 'BIR 2307' })) : []);
     jobs.forEach((j) => { j.p = progItem(j.x.file.name, j.label + ' · waiting'); });
-    const autoP = needEstimate ? progItem('Estimate cost of sales & expenses', 'No expense files · waiting for revenue and previous ITR') : null;
+    const autoP = needEstimate ? progItem(S.salesType === 'VAT' ? 'Expenses from the 2550Q + expenses without input tax' : 'Estimate cost of sales & expenses', 'No expense files · waiting for the returns') : null;
     const taxP = progItem('Compute ' + S.form + ' tax due', 'waiting');
 
     const common = { clientId: S.client.id, year: S.year, quarter: S.quarter, form: S.form, vat: S.salesType };
@@ -975,7 +1091,23 @@
     }
 
     const R = buildResult(sales, prior, exps, failed, certs);
-    if (needEstimate) {
+    if (R.noCurrent) {
+      const found = R.quarters.filter((x) => x.uploaded).map((x) => 'Q' + x.q);
+      fail('No ' + (S.salesType === 'VAT' ? '2550Q' : '2551Q') + ' for Q' + S.quarter + ' ' + S.year + ' was found among the files' + (found.length ? ' (found ' + found.join(', ') + ')' : '') + '. Upload the return for Q' + S.quarter + '.');
+      if (autoP) autoP.err('Skipped');
+      taxP.err('Skipped');
+      return;
+    }
+    const curQ = R.quarters.find((x) => x.q === S.quarter);
+    const curPurch = curQ ? curQ.purch.goods + curQ.purch.services + curQ.purch.noInput : 0;
+    if (needEstimate && S.salesType === 'VAT' && curPurch > 0) {
+      // VAT: expenses with input tax = purchases on the 2550Q; expenses without input tax = the % entered
+      R.items = vatItems(curQ);
+      R.expenseSource = 'vat2550';
+      R.vatExp = { pct: Math.max(0, parseNum(S.nonInputPct)) };
+      autoP.ok('Purchases with input tax ' + money(curQ.purch.goods + curQ.purch.services) + (curQ.purch.noInput ? ' · without input tax ' + money(curQ.purch.noInput) : '') + ' · other expenses ' + R.vatExp.pct + '% of revenue');
+    } else if (needEstimate) {
+      if (S.salesType === 'VAT') R.warnings.push('No purchases were found on the Q' + S.quarter + ' 2550Q, so expenses are estimated as a percentage of revenue instead.');
       // Rates from the previous quarter's ITR (cost of sales and itemized deductions ÷ its revenue)
       const prev = priorRates(prior);
       autoP.run(prev ? 'Previous quarter: cost of sales ' + prev.cos + '% · expenses ' + (prev.opex == null ? 'n/a' : prev.opex + '%') + ' — waiting for your rates' : 'Waiting for your expense rate');
@@ -1039,7 +1171,31 @@
     const revenueLines = [];
     let revenue = 0;
     const vatT = { vatable_sales: 0, sales_to_government: 0, zero_rated_sales: 0, exempt_sales: 0 };
+    // Quarterly ITRs are cumulative: the returns of Q1 … Q(selected) are read and placed by the quarter printed on each one.
+    const byQ = {};
     sales.forEach((s) => {
+      const d = s.d.data;
+      let q = Number(d.quarter) || 0;
+      const y = Number(d.year) || S.year;
+      if (!q) { q = S.quarter; if (sales.length > 1) W.push('The quarter could not be read on ' + s.d.fileName + '; it was taken as Q' + S.quarter + ' ' + S.year + '.'); }
+      if (y !== S.year) { W.push(s.d.fileName + ' is for ' + y + ', not ' + S.year + ', so it was not used.'); return; }
+      if (q > S.quarter) { W.push(s.d.fileName + ' is for Q' + q + ' ' + y + ', after the selected Q' + S.quarter + ', so it was not used.'); return; }
+      (byQ[q] = byQ[q] || []).push(s);
+    });
+    const quarters = [];
+    for (let q = 1; q <= S.quarter; q++) {
+      const list = byQ[q] || [];
+      const sum = (k) => r2(list.reduce((t, s) => t + (Number(s.d.data[k]) || 0), 0));
+      quarters.push({ q, files: list.map((s) => s.d.fileName), uploaded: list.length > 0, revenue: sum('revenue'),
+        purch: { goods: r2(sum('purchases_goods') + sum('importations') + sum('purchases_other')), services: sum('purchases_services'), capital: sum('purchases_capital_goods'), noInput: sum('purchases_no_input_tax') },
+        inputTax: sum('input_tax_current') || sum('input_tax'), estimated: list.some((s) => s.d.data.purchases_estimated) });
+      if (list.length > 1) W.push('info:' + list.length + ' returns were read for Q' + q + ' ' + S.year + ' (' + list.map((s) => s.d.fileName).join(', ') + ') and added together.');
+    }
+    const cur = byQ[S.quarter] || [];
+    const missingPrev = quarters.filter((x) => x.q < S.quarter && !x.uploaded).map((x) => 'Q' + x.q);
+    const prevUploaded = quarters.filter((x) => x.q < S.quarter && x.uploaded);
+    if (S.quarter > 1 && prevUploaded.length && missingPrev.length) W.push('No ' + (S.salesType === 'VAT' ? '2550Q' : '2551Q') + ' was uploaded for ' + missingPrev.join(' and ') + ' ' + S.year + '. Upload it so the previous quarters are complete.');
+    cur.forEach((s) => {
       const d = s.d.data;
       revenue += d.revenue;
       if (s.job.docType === 'sales_vat') {
@@ -1051,9 +1207,8 @@
         if (!(d.lines || []).length) revenueLines.push({ label: 'Gross sales/receipts (' + s.d.fileName + ')', amount: d.revenue });
       }
       if (d.taxpayer_tin && c.tin && tinDigits(d.taxpayer_tin) !== tinDigits(c.tin)) W.push('TIN on ' + s.d.fileName + ' (' + d.taxpayer_tin + ') does not match the client\'s TIN (' + c.tin + ').');
-      if (d.year && d.quarter && (Number(d.year) !== S.year || Number(d.quarter) !== S.quarter)) W.push(s.d.fileName + ' appears to be for Q' + d.quarter + ' ' + d.year + ', but you selected Q' + S.quarter + ' ' + S.year + '.');
-      if (d.confidence === 'low') W.push('Muse Spark has low confidence reading ' + s.d.fileName + (d.notes ? ': ' + d.notes : '.'));
     });
+    sales.forEach((s) => { const d = s.d.data; if (d.confidence === 'low') W.push('Muse Spark has low confidence reading ' + s.d.fileName + (d.notes ? ': ' + d.notes : '.')); });
     if (sales.some((s) => s.job.docType === 'sales_vat')) {
       [['vatable_sales', 'VATable sales (private)'], ['sales_to_government', 'Sales to government'], ['zero_rated_sales', 'Zero-rated sales'], ['exempt_sales', 'Exempt sales']]
         .forEach(([k, l]) => { if (vatT[k]) revenueLines.unshift({ label: l, amount: r2(vatT[k]) }); });
@@ -1080,8 +1235,10 @@
       if (d.form_detected && !String(d.form_detected).includes(S.form.slice(0, 4))) W.push('The previous ITR looks like form ' + d.form_detected + ', but you are preparing ' + S.form + '.');
       if (d.confidence === 'low') W.push('Muse Spark has low confidence reading the previous ITR' + (d.notes ? ': ' + d.notes : '.'));
       if (d.tax_payable > 0) W.push('info:Tax payments for previous quarters assume the Q' + (S.quarter - 1) + ' tax payable of ' + money(Math.max(0, d.tax_payable)) + ' was paid. Edit the amount if it was not.');
+    } else if (S.quarter > 1 && prevUploaded.length) {
+      W.push('info:No previous quarter ITR was uploaded, so the previous quarters\' taxable income is computed from the ' + prevUploaded.map((x) => 'Q' + x.q).join(' and ') + ' ' + (S.salesType === 'VAT' ? '2550Q' : '2551Q') + ' (revenue less expenses). Enter the tax payments and credits of previous quarters in the tax computation.');
     } else if (S.quarter > 1) {
-      W.push('No previous quarter ITR was uploaded. Enter the taxable income, payments and credits from previous quarters in the tax computation.');
+      W.push('No previous quarter ITR or previous ' + (S.salesType === 'VAT' ? '2550Q' : '2551Q') + ' was uploaded. Enter the taxable income, payments and credits from previous quarters in the tax computation.');
     }
 
     const items = [];
@@ -1105,7 +1262,7 @@
       revenueLines, revenue: r2(revenue), revenueAuto: r2(revenue),
       otherIncome: 0, otherDeductions: 0, cwtThisQ: 0, excessMcit: 0, otherCredits: 0,
       certs: certList, cwtUploaded: r2(certList.reduce((s, c) => s + c.total_tax_withheld, 0)), cwtEdited: false,
-      prior: P,
+      prior: P, priorItr: !!prior, priorEdits: {}, quarters, noCurrent: !cur.length,
       items, overrides: {}, open: {},
       expenseSource: 'documents', auto: null,
       docs: sales.concat(prior ? [prior] : [], exps, certs || []).map((r) => ({ type: r.job.docType, file: r.d.fileName, data: r.d.data, url: r.d.archivedUrl })),
@@ -1138,6 +1295,7 @@
   function accounts(R) {
     const map = new Map();
     R.items.forEach((it) => {
+      if (it.nonInput && !it.amount) return;
       const key = it.category + '|' + normAcct(it.account);
       if (!map.has(key)) map.set(key, { key, account: it.account, category: it.category, amount: 0, items: [] });
       const a = map.get(key);
@@ -1153,12 +1311,23 @@
   function model() {
     const R = S.R, o = S.opts;
     rescaleAuto(R);
+    if (R.expenseSource === 'vat2550') {
+      const ni = R.items.find((i) => i.nonInput);
+      if (ni) { ni.amount = r2(R.revenue * R.vatExp.pct / 100); ni.description = 'Estimated: ' + R.vatExp.pct + '% of revenue (expenses without input tax)'; }
+    }
     const accts = accounts(R);
     const sum = (cat) => r2(accts.filter((a) => a.category === cat).reduce((s, a) => s + a.amount, 0));
     const cos = sum('cost_of_sales'), opex = sum('operating_expense'), nonded = sum('non_deductible');
     const ent = window.ITRTax.entertainmentCap(accts, R.revenue, o.sellerOf);
     const deductibleOpex = r2(opex - (o.method === 'itemized' ? ent.disallowed : 0));
     const cw = cwtInfo(R);
+    // previous quarters from the uploaded Q1…Q(n−1) returns, when no previous ITR was read (edited amounts are kept)
+    const PV = prevFromReturns(R, { revenue: R.revenue, cos, opex: deductibleOpex });
+    if (PV && !R.priorItr) {
+      if (!R.priorEdits.taxableIncomePrev) R.prior.taxableIncomePrev = PV.taxable;
+      if (!R.priorEdits.grossIncomePrev) R.prior.grossIncomePrev = PV.grossIncome;
+      if (!R.priorEdits.cumulativeIncomePrev) R.prior.cumulativeIncomePrev = PV.revenue;
+    }
     const tax = window.ITRTax.compute({
       form: S.form, year: S.year, quarter: S.quarter, method: o.method,
       vatStatus: S.salesType, mixedIncome: o.mixedIncome,
@@ -1175,8 +1344,21 @@
       revenueLines: R.revenueLines, revenue: R.revenue, revenueEdited: R.revenue !== R.revenueAuto,
       accounts: accts, cos, opex, nonded, ent, deductibleOpex,
       grossProfit: r2(R.revenue - cos), netIncome: r2(R.revenue - cos - opex),
-      tax, R, user: S.user, cwt: { mode: S.cwt.mode, kind: S.cwt.kind, note: cw.note }
+      tax, R, user: S.user, cwt: { mode: S.cwt.mode, kind: S.cwt.kind, note: cw.note },
+      prevQ: PV, quarters: quarterRows(R, PV, cos, opex)
     };
+  }
+
+  /** Quarter-by-quarter table (Q1 … this quarter + total to date) */
+  function quarterRows(R, PV, cos, opex) {
+    if (S.quarter < 2) return null;
+    const rows = (PV ? PV.rows : []).map((x) => ({ q: x.q, revenue: x.revenue, cos: x.cos, opex: x.opex, withInput: x.withInput, nonInput: x.nonInput, net: r2(x.revenue - x.cos - x.opex), files: x.files }));
+    const withInputNow = R.expenseSource === 'vat2550' ? r2(R.items.filter((i) => i.vat2550).reduce((t, i) => t + i.amount, 0)) : 0;
+    rows.push({ q: S.quarter, revenue: R.revenue, cos, opex, withInput: withInputNow, nonInput: R.expenseSource === 'vat2550' ? r2(cos + opex - withInputNow) : r2(cos + opex), net: r2(R.revenue - cos - opex), current: true,
+      files: (R.quarters.find((x) => x.q === S.quarter) || {}).files || [] });
+    const missing = R.quarters.filter((x) => x.q < S.quarter && !x.uploaded).map((x) => x.q);
+    const tot = (k) => r2(rows.reduce((t, r) => t + r[k], 0));
+    return { rows, missing, total: { revenue: tot('revenue'), cos: tot('cos'), opex: tot('opex'), withInput: tot('withInput'), nonInput: tot('nonInput'), net: tot('net') }, fromReturns: !!PV && !R.priorItr };
   }
 
   /* ======================= results rendering ======================= */
@@ -1211,12 +1393,13 @@
     const warn = R.warnings.concat(T.warnings);
     if (M.ent.disallowed > 0) warn.push('Representation & entertainment of ' + money(M.ent.reTotal) + ' is more than the ' + (M.ent.rate * 100) + '% limit (' + money(M.ent.cap) + '). ' + money(M.ent.disallowed) + ' was disallowed as a deduction.');
     if (M.method === 'osd' || M.method === 'eight') warn.push('info:' + (M.method === 'osd' ? 'OSD' : 'The 8% option') + ' is selected, so the expenses below are for reference only. They do not reduce the tax due.');
+    if (R.expenseSource === 'vat2550') warn.push('info:No expense documents were uploaded, so expenses with input tax are the purchases on the 2550Q' + (R.quarters.some((x) => x.estimated) ? ' (estimated from the input tax ÷ 12% where the purchases were not printed)' : '') + ', and expenses without input tax are ' + R.vatExp.pct + '% of revenue. Keep supporting documents for every deduction you claim.');
     if (R.auto) warn.push('info:No expense documents were uploaded, so cost of sales and expenses are estimated from ' + (R.auto.basis === 'prior' ? 'the previous quarter\'s rates' : 'the rate you entered') + '.' + (R.auto.rationale ? ' ' + R.auto.rationale : '') + ' Keep supporting documents for every deduction you claim.');
 
     const kpi = (label, val, sub, hl) => '<div class="kpi' + (hl ? ' hl' : '') + '"><small>' + label + '</small><b data-count="' + val + '">' + money(animate ? 0 : val) + '</b>' + (sub ? '<em>' + sub + '</em>' : '') + '</div>';
 
     let h = '<div class="kpis">' +
-      kpi('Revenue', M.revenue, 'Q' + M.quarter + ' ' + M.year) +
+      kpi('Revenue', M.revenue, 'Q' + M.quarter + ' ' + M.year + (M.quarters ? ' · to date ' + money(M.quarters.total.revenue) : '')) +
       kpi('Cost of sales', M.cos, plural(M.accounts.filter((a) => a.category === 'cost_of_sales').length, 'account')) +
       kpi('Operating expenses', M.opex, plural(M.accounts.filter((a) => a.category === 'operating_expense').length, 'account')) +
       kpi('Tax still due', T.taxPayable, 'Tax due ' + money(T.taxDue) + ' · credits ' + money(T.totalCredits), true) +
@@ -1233,7 +1416,28 @@
         '<div class="est-in"><span>Total</span><b style="font-family:var(--mono);font-size:15px;line-height:38px">' + r2(R.auto.cosPct + R.auto.opexPct) + '% · ' + money(M.cos + M.opex) + '</b><small>&nbsp;</small></div>' +
         (p && p.opex != null ? '<button type="button" class="btn btn-outline" data-est-reset>Use previous quarter rates</button>' : '') + '</div>';
     }
+    if (R.expenseSource === 'vat2550') {
+      const withIn = r2(R.items.filter((i) => i.vat2550).reduce((t, i) => t + i.amount, 0));
+      const nonIn = r2(R.revenue * R.vatExp.pct / 100);
+      h += '<div class="est-box"><div class="est-h"><b>Expenses — 2550Q purchases + expenses without input tax</b><small>Purchases with input tax come from the 2550Q. Set the % of revenue for salaries, labor, depreciation and other expenses with no input tax.</small></div>' +
+        '<div class="est-in"><span>With input tax (2550Q)</span><b style="font-family:var(--mono);font-size:15px;line-height:38px">' + money(withIn) + '</b><small>Q' + S.quarter + ' purchases</small></div>' +
+        '<label class="est-in"><span>Without input tax</span><div class="pct-box"><input data-vatpct inputmode="decimal" value="' + R.vatExp.pct + '"' + (R.vatExp.pct ? '' : ' class="changed"') + ' /> % of revenue</div><small>' + money(nonIn) + (R.vatExp.pct ? '' : ' — enter the estimated %') + '</small></label>' +
+        '<div class="est-in"><span>Total expenses</span><b style="font-family:var(--mono);font-size:15px;line-height:38px">' + money(M.cos + M.opex) + '</b><small>' + (R.revenue ? r2((M.cos + M.opex) / R.revenue * 100) + '% of revenue' : '&nbsp;') + '</small></div></div>';
+    }
     if (warn.length) h += '<div class="alerts">' + warn.map((w) => w.startsWith('info:') ? '<div class="alert info">' + esc(w.slice(5)) + '</div>' : '<div class="alert">' + esc(w) + '</div>').join('') + '</div>';
+
+    // ---- Quarters to date
+    if (M.quarters) {
+      const QQ = M.quarters, vatCols = R.expenseSource === 'vat2550';
+      const cell = (v) => '<td class="amt">' + money(v) + '</td>';
+      const row = (r) => '<tr' + (r.current ? ' class="sub"' : '') + '><td>Q' + r.q + ' ' + S.year + (r.current ? ' (this return)' : '') + '<span class="note">' + esc((r.files || []).join(', ') || '') + '</span></td>' + cell(r.revenue) + cell(r.cos) + cell(r.opex) + (vatCols ? cell(r.withInput) + cell(r.nonInput) : '') + cell(r.net) + '</tr>';
+      const miss = QQ.missing.map((q) => '<tr class="muted"><td>Q' + q + ' ' + S.year + '<span class="note">No ' + (S.salesType === 'VAT' ? '2550Q' : '2551Q') + ' uploaded' + (R.priorItr ? ' — previous quarters come from the previous ITR' : '') + '</span></td><td class="amt" colspan="' + (vatCols ? 6 : 4) + '">—</td></tr>').join('');
+      const T2 = QQ.total;
+      h += '<div class="panel"><div class="panel-h"><h4>Quarters to date — Q1 to Q' + S.quarter + ' ' + S.year + '</h4><small>' + (QQ.fromReturns ? 'Previous quarters\' taxable income in the computation is taken from these returns' : R.priorItr ? 'Previous quarters\' taxable income in the computation is taken from the previous ITR' : '') + '</small></div><div class="scroll-x"><table class="tbl qtd">' +
+        '<tr class="sec"><td>Quarter</td><td class="amt">Revenue</td><td class="amt">Cost of sales</td><td class="amt">Operating expenses</td>' + (vatCols ? '<td class="amt">With input tax</td><td class="amt">Without input tax</td>' : '') + '<td class="amt">Net income</td></tr>' +
+        miss + QQ.rows.map(row).join('') +
+        '<tr class="tot"><td>Total to date</td>' + cell(T2.revenue) + cell(T2.cos) + cell(T2.opex) + (vatCols ? cell(T2.withInput) + cell(T2.nonInput) : '') + cell(T2.net) + '</tr></table></div></div>';
+    }
 
     // ---- Income statement
     let is = '<tr class="sec"><td colspan="2">Revenue</td></tr>';
@@ -1331,7 +1535,7 @@
     if (t && !e.target.closest('input')) { const k = t.dataset.toggle; S.R.open[k] = !S.R.open[k]; renderResults(); }
   });
   $('#results').addEventListener('focusin', (e) => { if (e.target.matches('.num-input')) setTimeout(() => e.target.select(), 0); });
-  $('#results').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.num-input, [data-est]')) e.target.blur(); });
+  $('#results').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.num-input, [data-est], [data-vatpct]')) e.target.blur(); });
   $('#results').addEventListener('click', (e) => {
     if (!e.target.closest('[data-est-reset]')) return;
     const p = S.R.auto.prev; S.R.auto.cosPct = p.cos; S.R.auto.opexPct = p.opex; S.R.auto.basis = 'prior';
@@ -1351,6 +1555,14 @@
       setTimeout(() => renderResults(), 0);
       return;
     }
+    if (el.matches('[data-vatpct]')) {
+      const v = Math.min(100, Math.max(0, parseNum(el.value)));
+      S.R.vatExp.pct = r2(v); S.nonInputPct = String(r2(v));
+      if (S.client) localStorage.setItem('itr_noninput_' + S.client.id, S.nonInputPct);
+      Object.keys(S.R.overrides).forEach((k) => { if (S.R.items.some((i) => i.nonInput && (i.category + '|' + normAcct(i.account)) === k)) delete S.R.overrides[k]; });
+      setTimeout(() => renderResults(), 0);
+      return;
+    }
     if (el.matches('[data-cwtswitch]')) {
       const [m, k] = el.value.split('|');
       S.cwt.mode = m; if (k) S.cwt.kind = k;
@@ -1364,7 +1576,7 @@
     if (ns === 'a') {
       const base = accounts(Object.assign({}, S.R, { overrides: {} })).find((a) => a.key === key);
       if (base && r2(base.amount) === v) delete S.R.overrides[key]; else S.R.overrides[key] = v;
-    } else if (ns === 'p') S.R.prior[key] = v;
+    } else if (ns === 'p') { S.R.prior[key] = v; S.R.priorEdits[key] = true; }
     else if (ns === 'r' && key === 'cwtThisQ') {
       if (S.cwt.mode === 'manual') { S.cwt.manual = v; S.R.cwtThisQ = v; $('#cwtManual').value = v ? plain(v) : ''; }
       else { S.R.cwtThisQ = v; S.R.cwtEdited = true; }
@@ -1388,7 +1600,7 @@
         report: {
           form: M.form, year: M.year, quarter: M.quarter, method: M.methodLabel, revenue: M.revenue, costOfSales: M.cos,
           opex: M.deductibleOpex, taxableToDate: M.tax.taxableToDate, taxDue: M.tax.taxDue, credits: M.tax.totalCredits,
-          taxPayable: M.tax.taxPayable, expenseSource: S.R.expenseSource === 'auto' ? 'Estimated: COS ' + S.R.auto.cosPct + '% + OpEx ' + S.R.auto.opexPct + '% (' + (S.R.auto.basis === 'prior' ? 'prior-quarter rates' : 'user rate') + ')' : 'Documents'
+          taxPayable: M.tax.taxPayable, expenseSource: S.R.expenseSource === 'vat2550' ? '2550Q purchases + ' + S.R.vatExp.pct + '% without input tax' : S.R.expenseSource === 'auto' ? 'Estimated: COS ' + S.R.auto.cosPct + '% + OpEx ' + S.R.auto.opexPct + '% (' + (S.R.auto.basis === 'prior' ? 'prior-quarter rates' : 'user rate') + ')' : 'Documents'
         }
       }).catch(() => {});
     } catch (e) {
