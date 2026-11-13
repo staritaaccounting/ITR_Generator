@@ -553,3 +553,7 @@ input[type=range] { width: 100%; accent-color: var(--navy); height: 28px; }
   .ld-feats { display: none; }
   .ld-tagline.desk { display: none; }
 }
+
+/* VAT status differs from client list */
+.vat-mismatch { background: #fff7e6; border: 1px solid #f3d38a; color: #6b4b00; border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 1.45; }
+.vat-mismatch .link-strong { margin-left: 4px; }

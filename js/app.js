@@ -550,10 +550,11 @@
       $('#clientCard').innerHTML =
         '<div><small>TIN</small><b>' + esc(c.tin || '—') + '</b></div>' +
         '<div><small>Taxpayer type</small><b>' + esc(c.type) + '</b></div>' +
-        '<div><small>VAT status</small><b>' + esc(c.vat || 'Not set — choose in step 2') + '</b></div>' +
+        '<div><small>VAT status</small><b id="ccVat"></b></div>' +
         '<div><small>RDO</small><b>' + esc(c.rdo || '—') + '</b></div>' +
         (c.lob ? '<div style="grid-column:1/-1"><small>Line of business</small><b>' + esc(c.lob) + '</b></div>' : '') +
-        (c.forms ? '<div style="grid-column:1/-1"><small>Enrolled BIR forms</small><b class="forms">' + esc(c.forms) + '</b></div>' : '');
+        (c.forms ? '<div style="grid-column:1/-1"><small>Enrolled BIR forms</small><b class="forms">' + esc(c.forms) + '</b></div>' : '') +
+        '<div class="vat-mismatch" id="vatMismatch" style="grid-column:1/-1" hidden></div>';
       $('#clientCard').hidden = false;
       S.opts.sellerOf = c.sellerOf || 'Goods';
       S.nonInputPct = localStorage.getItem('itr_noninput_' + c.id) || '';
@@ -572,6 +573,35 @@
     }
     refresh();
   }
+
+  /* VAT status shown for the client = what you selected for this return; offer to fix the client list if it differs */
+  function renderClientVat() {
+    const c = S.client, el = $('#ccVat'), box = $('#vatMismatch');
+    if (!c || !el) return;
+    el.textContent = S.salesType;
+    const diff = c.vat && c.vat !== S.salesType;
+    box.hidden = !diff && !!c.vat;
+    if (!c.vat) {
+      box.innerHTML = 'VAT status is not set in the client list. <button type="button" class="link-strong" id="vatFix">Save ' + esc(S.salesType) + ' to client list</button>';
+    } else if (diff) {
+      box.innerHTML = 'Client list says <b>' + esc(c.vat) + '</b>, but you selected <b>' + esc(S.salesType) + '</b>. This return uses ' + esc(S.salesType) + '. <button type="button" class="link-strong" id="vatFix">Update client list to ' + esc(S.salesType) + '</button>';
+    }
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('#vatFix'); if (!b || !S.client) return;
+    const c = S.client, vat = S.salesType;
+    b.disabled = true; b.textContent = 'Saving…';
+    try {
+      await api('setClientVat', { clientId: c.id, vat });
+      c.vat = vat;
+      (S.clients || []).forEach((x) => { if (x.id === c.id) x.vat = vat; });
+      toast(c.name + ' is now ' + vat + ' in the client list.', 'ok');
+      refresh();
+    } catch (ex) {
+      toast(ex.message, 'err');
+      b.disabled = false; b.textContent = 'Update client list to ' + vat;
+    }
+  });
 
   /* ======================= step 2: period & form ======================= */
   (function initYears() {
@@ -787,6 +817,7 @@
       if (rec && !tag) b.insertAdjacentHTML('beforeend', '<span class="rec">Matches taxpayer type</span>');
       if (!rec && tag) tag.remove();
     });
+    renderClientVat();
     $$('#vatSeg button').forEach((b) => {
       const on = b.dataset.v === S.salesType;
       b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
@@ -1340,7 +1371,7 @@
       : (o.method === 'osd' ? 'OSD (40% of gross income)' : 'Itemized deductions') + ' · ' + window.ITRTax.TAX_TYPES[o.taxType].label +
         (window.ITRTax.TAX_TYPES[o.taxType].mcit && !(o.mcitExempt && o.taxType !== 'mcit') ? ' · MCIT ' + (o.mcitRate * 100) + '% of ' + (o.mcitBase === 'sales' ? 'gross sales' : 'gross income') : '');
     return {
-      client: S.client, year: S.year, quarter: S.quarter, form: S.form, method: o.method, methodLabel,
+      client: Object.assign({}, S.client, { vat: S.salesType }), year: S.year, quarter: S.quarter, form: S.form, method: o.method, methodLabel,
       revenueLines: R.revenueLines, revenue: R.revenue, revenueEdited: R.revenue !== R.revenueAuto,
       accounts: accts, cos, opex, nonded, ent, deductibleOpex,
       grossProfit: r2(R.revenue - cos), netIncome: r2(R.revenue - cos - opex),
