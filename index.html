@@ -110,6 +110,7 @@
             </div>
           </div>
           <button class="ld-cta" id="ldGenerate" type="submit">Generate ITR Now</button>
+          <button type="button" class="ld-forgot" id="ldForgot">Forgot username or password?</button>
         </form>
         <div class="ld-feats">
           <div>
@@ -246,6 +247,13 @@
               <span>Drop files or <u>browse</u></span>
             </label>
             <ul class="files" data-list="sales"></ul>
+            <div class="nonin" id="nonInputBox">
+              <label class="nonin-in" for="nonInputPct">
+                <span><b>Expenses without input tax</b><small>Salaries, wages, labor, SSS / PhilHealth / Pag-IBIG, depreciation, rent and other costs with no VAT</small></span>
+                <span class="pct-box"><input id="nonInputPct" inputmode="decimal" placeholder="0" /> % of revenue</span>
+              </label>
+              <p class="hint">Expenses <b>with</b> input tax are taken from the purchases on each 2550Q. This percentage adds the expenses that have no input tax. Used when no expense documents are uploaded; you can still change it on the results.</p>
+            </div>
           </div>
 
           <div class="upl" id="uplPrior">
@@ -414,6 +422,7 @@
       </label>
       <div id="loginError" class="form-error" role="alert"></div>
       <button class="btn btn-blue btn-block btn-lg" id="loginBtn" type="submit"><span>Sign in &amp; generate</span></button>
+      <button type="button" class="link-forgot" id="siForgot">Forgot username or password?</button>
       <p class="si-switch">New staff? <button type="button" class="link-strong" id="toSignup">Create an account</button></p>
       <button type="button" class="link-btn" id="openSettings">Backend settings</button>
     </form>
@@ -449,6 +458,41 @@
       <div id="suError" class="form-error" role="alert"></div>
       <button class="btn btn-blue btn-block btn-lg" id="suBtn" type="submit"><span>Create account &amp; continue</span></button>
       <p class="si-switch">Already enrolled? <button type="button" class="link-strong" id="toSignin">Sign in</button></p>
+    </form>
+  </div>
+
+  <div class="modal" id="resetModal" hidden>
+    <form id="resetForm" class="modal-card signin-card" role="dialog" aria-modal="true" aria-labelledby="rsTitle" autocomplete="off" novalidate>
+      <button type="button" class="m-x" data-close aria-label="Close">&times;</button>
+      <div class="logo-circle si-logo sm"><img src="icons/logo.png" alt="Sta. Rita Accounting Office" width="120" height="119" /></div>
+      <h3 id="rsTitle">Forgot username or password</h3>
+      <div id="rsStep1">
+        <p class="muted si-sub">Enter the office reset PIN. Ask the administrator if you don't know it.</p>
+        <label class="field">
+          <span>Reset PIN</span>
+          <input id="rsPin" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="••••••••" class="pin-in" />
+        </label>
+      </div>
+      <div id="rsStep2" hidden>
+        <p class="muted si-sub">PIN accepted. Pick your username and set a new password.</p>
+        <label class="field">
+          <span>Your username</span>
+          <div class="sel-wrap"><select id="rsUser"></select></div>
+        </label>
+        <div class="grid-pw">
+          <label class="field">
+            <span>New password</span>
+            <input id="rsPass" type="password" autocomplete="new-password" minlength="8" />
+          </label>
+          <label class="field">
+            <span>Confirm password</span>
+            <input id="rsPass2" type="password" autocomplete="new-password" minlength="8" />
+          </label>
+        </div>
+      </div>
+      <div id="rsError" class="form-error" role="alert"></div>
+      <button class="btn btn-blue btn-block btn-lg" id="rsBtn" type="submit"><span>Continue</span></button>
+      <p class="si-switch">Remembered it? <button type="button" class="link-strong" id="rsToSignin">Sign in</button></p>
     </form>
   </div>
 
